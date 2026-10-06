@@ -15,3 +15,10 @@ TradingView widget (calendar). All free, no keys.
 
 Files: `scripts/fetch_data.py` (collects data), `docs/index.html` (the page), `.github/workflows/update.yml` (the schedule).
 To add a ticker, edit the `YAHOO` list at the top of `fetch_data.py`.
+
+## Watchlist page
+`watchlist.html` (link at the top of the macro page) shows your baskets from `watchlist.txt`:
+basket averages, relative strength vs the S&P 500, 52-week range, 50/200-day trend, unusual volume,
+latest headlines per stock, and a "Copy brief for Claude" button.
+To change it: open `watchlist.txt` on GitHub, click the pencil, edit, save. It rebuilds automatically.
+Share tickers only (no position sizes): the repository may be public.

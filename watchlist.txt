@@ -1,0 +1,46 @@
+# YOUR WATCHLIST - edit this file on GitHub (pencil icon), save, and the page rebuilds itself.
+#
+# Format:   [Basket name]    starts a new basket
+#           TICKER | Company name        one stock per line
+# Bloomberg style tickers are fine ("SHOP US" works too). Lines starting with # are ignored.
+# Only share tickers here, never position sizes or prices: this repository may be public.
+
+[Agentic Utilities]
+SHOP | Shopify
+META | Meta Platforms
+INOD | Innodata
+TWLO | Twilio
+BAND | Bandwidth
+RNG | RingCentral
+DOCU | DocuSign
+
+[Agentic Infrastructure]
+CSCO | Cisco
+ATEN | A10 Networks
+CIEN | Ciena
+HPE | Hewlett Packard Enterprise
+VRSN | VeriSign
+FSLY | Fastly
+EQIX | Equinix
+DLR | Digital Realty Trust
+VNET | VNET Group
+DOCN | DigitalOcean
+RXT | Rackspace
+
+[Agentic Cybersecurity]
+SAIL | SailPoint
+RBRK | Rubrik
+OKTA | Okta
+ZS | Zscaler
+NTSK | Netskope
+NET | Cloudflare
+AKAM | Akamai
+DDOG | Datadog
+PANW | Palo Alto Networks
+
+[Agentic Payments]
+V | Visa
+MA | Mastercard
+CRCL | Circle Internet Group
+PYPL | PayPal
+COIN | Coinbase Global
