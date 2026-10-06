@@ -58,6 +58,21 @@ def get(url, tries=2, timeout=10):
     raise last
 
 
+def rsi14(closes):
+    """Wilder RSI(14), the same smoothing TradingView uses by default."""
+    if len(closes) < 15:
+        return None
+    gains, losses = [], []
+    for a, b in zip(closes, closes[1:]):
+        d = b - a
+        gains.append(max(d, 0.0))
+        losses.append(max(-d, 0.0))
+    ag, al = sum(gains[:14]) / 14, sum(losses[:14]) / 14
+    for g, l in zip(gains[14:], losses[14:]):
+        ag, al = (ag * 13 + g) / 14, (al * 13 + l) / 14
+    return 100.0 if al == 0 else 100.0 - 100.0 / (1 + ag / al)
+
+
 def yahoo(symbol):
     q = urllib.parse.quote(symbol)
     raw = None
@@ -102,7 +117,7 @@ def yahoo(symbol):
         return sum(series[-n:]) / n if len(series) >= n else None
 
     return {
-        "ma50": ma(50), "ma200": ma(200), "vol_x": vol_x,
+        "ma50": ma(50), "ma200": ma(200), "vol_x": vol_x, "rsi": rsi14(series),
         "symbol": symbol, "last": last, "prev": prev,
         "chg": None if prev is None else last - prev,
         "pct": pct(last, prev), "w1": pct(last, ago(5)), "m1": pct(last, ago(21)),
@@ -228,7 +243,7 @@ def news(name, url, limit=8):
 
 
 def read_watchlist(path):
-    """watchlist.txt -> [{"name": basket, "items": [(yahoo symbol, company name)]}]"""
+    """watchlist.txt -> [{"name": basket, "items": [(yahoo symbol, company name, optional TradingView exchange)]}]"""
     groups, cur = [], None
     with open(path, encoding="utf-8") as fh:
         for line in fh:
@@ -242,10 +257,12 @@ def read_watchlist(path):
             if cur is None:
                 cur = {"name": "Watchlist", "items": []}
                 groups.append(cur)
-            sym, _, name = line.partition("|")
+            sym, _, rest = line.partition("|")
+            name, _, exch = rest.partition("|")
+            exch = exch.strip().upper()
             sym = re.sub(r"\s+(US|UN|UQ|UW|UA)$", "", sym.strip().upper()).replace("/", "-").replace(" ", "")
             if sym:
-                cur["items"].append((sym, name.strip() or sym))
+                cur["items"].append((sym, name.strip() or sym, exch))
     return groups
 
 
@@ -263,18 +280,19 @@ def build_watchlist(path_in, path_out, spx):
     with ThreadPoolExecutor(max_workers=8) as ex:
         jobs = []
         for g in groups:
-            for sym, name in g["items"]:
+            for sym, name, exch in g["items"]:
                 feed = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(sym)}&region=US&lang=en-US"
-                jobs.append((g["name"], sym, name, ex.submit(safe2, yahoo, sym), ex.submit(safe2, news, sym, feed, 3)))
+                jobs.append((g["name"], sym, name, exch, ex.submit(safe2, yahoo, sym), ex.submit(safe2, news, sym, feed, 3)))
         by = {g["name"]: {"name": g["name"], "rows": []} for g in groups}
-        for gname, sym, name, qf, nf in jobs:
+        for gname, sym, name, exch, qf, nf in jobs:
             q, err = qf.result()
             nw, nerr = nf.result()
             if err:
                 wl["errors"].append(err)
-                by[gname]["rows"].append({"symbol": sym, "label": name, "missing": True})
+                by[gname]["rows"].append({"symbol": sym, "label": name, "missing": True, "tv": f"{exch}:{sym}" if exch else sym})
                 continue
             q["label"] = name
+            q["tv"] = f"{exch}:{sym}" if exch else sym
             q["news"] = [{"title": n["title"], "link": n["link"], "time": n["time"]} for n in (nw or [])]
             if nerr:
                 wl["errors"].append(nerr)

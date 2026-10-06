@@ -2,6 +2,8 @@
 #
 # Format:   [Basket name]    starts a new basket
 #           TICKER | Company name        one stock per line
+# Optional third column = TradingView exchange, only needed if the live price box says "symbol not found":
+#           SHOP | Shopify | NASDAQ
 # Bloomberg style tickers are fine ("SHOP US" works too). Lines starting with # are ignored.
 # Only share tickers here, never position sizes or prices: this repository may be public.
 
