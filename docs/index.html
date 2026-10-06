@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macro Morning Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14181f;--mute:#6a7280;--line:#e3e6eb;--up:#0b8a4b;--dn:#c62828;--acc:#2456d6}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e8ebf0;--mute:#8b93a1;--line:#262c36;--up:#35c27a;--dn:#ef6a6a;--acc:#6e97ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{padding:16px 20px 8px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:baseline;justify-content:space-between}
+h1{font-size:20px;margin:0}
+.stamp{color:var(--mute);font-size:12px}
+nav{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 8px;position:sticky;top:0;background:var(--bg);z-index:5}
+nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:4px 10px;border-radius:99px;font-size:12px}
+main{padding:0 20px 40px;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr))}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow:hidden}
+section.wide{grid-column:1/-1}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:0 0 8px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-weight:500;color:var(--mute);font-size:11px;text-align:right;padding:2px 6px}
+th:first-child,td:first-child{text-align:left}
+td{padding:5px 6px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}
+td.name{font-weight:500}
+.up{color:var(--up)}.dn{color:var(--dn)}
+svg.spark{width:70px;height:20px;vertical-align:middle}
+.hide-sm{display:table-cell}
+@media(max-width:560px){.hide-sm{display:none}}
+.news li{padding:6px 0;border-top:1px solid var(--line);list-style:none}
+.news ul{margin:0;padding:0}
+.news a{color:var(--ink);text-decoration:none}.news a:hover{color:var(--acc)}
+.src{color:var(--mute);font-size:11px;margin-right:6px}
+.banner{margin:0 20px 12px;padding:10px 12px;border:1px solid var(--dn);border-radius:8px;color:var(--dn);display:none}
+.heat{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+.heat div{padding:8px;border-radius:6px;font-size:12px;color:#fff}
+.heat b{display:block;font-size:14px}
+#curve{width:100%;height:240px}
+.legend span{margin-right:14px;font-size:12px;color:var(--mute)}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
+.note{color:var(--mute);font-size:12px;margin-top:6px}
+textarea{width:100%;min-height:110px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
+</style>
+</head>
+<body>
+<header>
+  <h1>Macro Morning Dashboard</h1>
+  <div class="stamp" id="stamp">Loading…</div>
+</header>
+<div class="banner" id="banner"></div>
+<nav id="nav"></nav>
+<main id="main"></main>
+
+<script>
+const fmt=(v,d=2)=>v==null||isNaN(v)?'–':v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const pc=(v,d=2)=>v==null||isNaN(v)?'–':(v>0?'+':'')+v.toFixed(d)+'%';
+const cls=v=>v==null?'':v>0?'up':v<0?'dn':'';
+function digits(r){const p=Math.abs(r.last);return p<10?4:p<1000?2:0}
+function spark(a,up){
+  if(!a||a.length<2)return '';
+  const mn=Math.min(...a),mx=Math.max(...a),w=70,h=20,rng=(mx-mn)||1;
+  const pts=a.map((v,i)=>[(i/(a.length-1))*w,h-2-((v-mn)/rng)*(h-4)].map(x=>x.toFixed(1)).join(',')).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+function quoteTable(title,rows,isRate){
+  if(!rows||!rows.length)return '';
+  const body=rows.map(r=>{
+    const d=isRate?2:digits(r);
+    const chg=isRate?(r.chg==null?null:r.chg*100):null;   // rates: show bp change
+    return `<tr><td class="name">${r.label}</td><td>${fmt(r.last,d)}</td>
+      <td class="${cls(r.pct)}">${isRate?(chg==null?'–':(chg>0?'+':'')+chg.toFixed(1)+' bp'):pc(r.pct)}</td>
+      ${isRate?'':`<td class="${cls(r.w1)} hide-sm">${pc(r.w1)}</td><td class="${cls(r.m1)} hide-sm">${pc(r.m1)}</td><td class="${cls(r.ytd)} hide-sm">${pc(r.ytd)}</td>`}
+      <td class="${cls(r.pct)}">${spark(r.spark)}</td></tr>`}).join('');
+  return `<section id="${slug(title)}"><h2>${title}</h2><table><tr><th></th><th>Last</th><th>${isRate?'Day chg':'Day'}</th>${isRate?'':'<th class="hide-sm">1W</th><th class="hide-sm">1M</th><th class="hide-sm">YTD</th>'}<th>45d</th></tr>${body}</table></section>`;
+}
+const slug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+function heat(rows){
+  const ordered=[...rows].sort((a,b)=>b.pct-a.pct);
+  const col=p=>{const k=Math.min(Math.abs(p)/2,1);return p>=0?`rgba(11,138,75,${0.45+k*0.55})`:`rgba(198,40,40,${0.45+k*0.55})`};
+  return `<section id="sectors"><h2>Sector performance today (SPDR ETFs)</h2><div class="heat">`+
+    ordered.map(r=>`<div style="background:${col(r.pct)}">${r.label}<b>${pc(r.pct)}</b></div>`).join('')+`</div></section>`;
+}
+function curveChart(c){
+  if(!c.length)return '';
+  const W=640,H=240,L=38,R=10,T=10,B=24;
+  const vals=c.flatMap(p=>[p.now,p.w1,p.m1,p.y1]).filter(v=>v!=null);
+  const mn=Math.floor(Math.min(...vals)*4)/4,mx=Math.ceil(Math.max(...vals)*4)/4;
+  const x=i=>L+i*(W-L-R)/(c.length-1),y=v=>T+(mx-v)/(mx-mn||1)*(H-T-B);
+  const line=(k,color,dash)=>{const pts=c.map((p,i)=>p[k]==null?null:`${x(i)},${y(p[k])}`).filter(Boolean).join(' ');return `<polyline fill="none" stroke="${color}" stroke-width="${k=='now'?2.5:1.5}" ${dash?'stroke-dasharray="4 3"':''} points="${pts}"/>`};
+  let grid='';for(let g=mn;g<=mx+1e-9;g+=(mx-mn>3?1:0.5)){grid+=`<line x1="${L}" x2="${W-R}" y1="${y(g)}" y2="${y(g)}" stroke="var(--line)"/><text x="${L-6}" y="${y(g)+4}" text-anchor="end" font-size="10" fill="var(--mute)">${g.toFixed(1)}</text>`}
+  const labs=c.map((p,i)=>`<text x="${x(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mute)">${p.label}</text>`).join('');
+  return `<svg id="curve" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${labs}${line('y1','#9aa3b2',1)}${line('m1','#e0a030',1)}${line('w1','#4aa3df',1)}${line('now','var(--acc)')}</svg>
+   <div class="legend"><span><i style="background:var(--acc)"></i>Latest (${c.find(p=>p.label=='10Y')?.date||''})</span><span><i style="background:#4aa3df"></i>1 week ago</span><span><i style="background:#e0a030"></i>1 month ago</span><span><i style="background:#9aa3b2"></i>1 year ago</span></div>`;
+}
+function ratesBlock(d){
+  const g=id=>d.curve.find(p=>p.label==id);
+  const two=g('2Y'),ten=g('10Y');
+  const rows=d.fred.map(r=>{
+    const bp=r.d1==null?null:r.d1*100;
+    return `<tr><td class="name">${r.label}</td><td>${fmt(r.now,2)}${r.id.startsWith('BAML')||r.id.startsWith('T10Y')||r.id=='DFII10'||r.id=='DFF'?'%':''}</td><td class="${cls(bp)}">${bp==null?'–':(bp>0?'+':'')+bp.toFixed(1)+' bp'}</td><td class="hide-sm">${fmt(r.w1,2)}</td><td class="hide-sm">${fmt(r.m1,2)}</td><td>${r.date.slice(5)}</td></tr>`}).join('');
+  const steep=two&&ten?`<div class="note">Today's 2s10s: <b>${((ten.now-two.now)*100).toFixed(0)} bp</b> (1 month ago: ${two.m1!=null&&ten.m1!=null?((ten.m1-two.m1)*100).toFixed(0):'–'} bp). FRED data is end-of-day and lags by one business day.</div>`:'';
+  return `<section id="curve-sec" class="wide"><h2>US Treasury yield curve</h2>${curveChart(d.curve)}${steep}</section>
+  <section id="spreads"><h2>Spreads, real yields &amp; credit (FRED)</h2><table><tr><th></th><th>Now</th><th>1-day</th><th class="hide-sm">1W ago</th><th class="hide-sm">1M ago</th><th>As of</th></tr>${rows}</table></section>`;
+}
+function newsBlock(items){
+  if(!items.length)return '';
+  const li=items.map(n=>`<li><span class="src">${n.source}</span><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></li>`).join('');
+  return `<section id="news" class="news"><h2>Headlines</h2><ul>${li}</ul></section>`;
+}
+const calendar=`<section id="calendar"><h2>Economic calendar (US, high/medium impact)</h2>
+<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div></div></section>`;
+const notes=`<section id="notes"><h2>My notes for today (saved only in this browser)</h2><textarea id="note" placeholder="Bloomberg takeaways, levels to watch, trade ideas…"></textarea></section>`;
+
+function render(d){
+  const S=d.sections;
+  const gen=new Date(d.generated);
+  document.getElementById('stamp').textContent='Data refreshed '+gen.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'})+' · Yahoo Finance · FRED · public RSS';
+  const age=(Date.now()-gen)/36e5;
+  if(age>30){const b=document.getElementById('banner');b.style.display='block';b.textContent=`Warning: this data is ${Math.round(age)} hours old. The automatic refresh may have failed (check the Actions tab in GitHub).`}
+  const parts=[
+    quoteTable('Futures',S['Futures']),quoteTable('US Indices',S['US Indices']),
+    S['Sectors (SPDR ETFs)']?heat(S['Sectors (SPDR ETFs)']):'',
+    ratesBlock(d),quoteTable('Rates (Yahoo, intraday)',S['Rates (Yahoo, intraday)'],true),
+    quoteTable('Energy',S['Energy']),quoteTable('Metals',S['Metals']),quoteTable('Agriculture',S['Agriculture']),
+    quoteTable('FX',S['FX']),quoteTable('Crypto',S['Crypto']),quoteTable('Global Indices',S['Global Indices']),
+    newsBlock(d.news),calendar,notes
+  ].join('');
+  document.getElementById('main').innerHTML=parts;
+  const ids=[['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['global-indices','Global'],['news','News'],['calendar','Calendar'],['notes','Notes']];
+  document.getElementById('nav').innerHTML=ids.filter(([i])=>document.getElementById(i)).map(([i,l])=>`<a href="#${i}">${l}</a>`).join('');
+  const n=document.getElementById('note');
+  try{n.value=localStorage.getItem('macro-note-'+new Date().toDateString())||'';n.addEventListener('input',()=>localStorage.setItem('macro-note-'+new Date().toDateString(),n.value))}catch(e){}
+  const s=document.createElement('script');s.type='text/javascript';s.async=true;
+  s.src='https://s3.tradingview.com/external-embedding/embed-widget-events.js';
+  s.text=JSON.stringify({colorTheme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light',isTransparent:true,width:'100%',height:'450',locale:'en',importanceFilter:'0,1',countryFilter:'us'});
+  document.querySelector('.tradingview-widget-container').appendChild(s);
+  if(d.errors&&d.errors.length)console.warn('Some feeds failed:',d.errors);
+}
+fetch('data.json?'+Date.now()).then(r=>r.json()).then(render).catch(e=>{document.getElementById('stamp').textContent='Could not load data.json — '+e});
+</script>
+</body>
+</html>
