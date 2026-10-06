@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fetch free market data and write docs/data.json. Standard library only."""
-import csv, io, json, sys, time, urllib.request, urllib.parse
+import csv, io, json, os, re, sys, time, urllib.request, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
@@ -93,7 +93,16 @@ def yahoo(symbol):
     prior = [c for t, c in pts if datetime.fromtimestamp(t, timezone.utc).year < year]
     if prior:
         ytd_base = prior[-1]
+    vols_raw = res["indicators"]["quote"][0].get("volume") or []
+    vols = [v for c, v in zip(closes, vols_raw) if c is not None and v is not None]
+    base = sum(vols[-21:-1]) / 20 if len(vols) >= 21 else 0
+    vol_x = vols[-1] / base if base else None
+
+    def ma(n):
+        return sum(series[-n:]) / n if len(series) >= n else None
+
     return {
+        "ma50": ma(50), "ma200": ma(200), "vol_x": vol_x,
         "symbol": symbol, "last": last, "prev": prev,
         "chg": None if prev is None else last - prev,
         "pct": pct(last, prev), "w1": pct(last, ago(5)), "m1": pct(last, ago(21)),
@@ -218,6 +227,68 @@ def news(name, url, limit=8):
     return items
 
 
+def read_watchlist(path):
+    """watchlist.txt -> [{"name": basket, "items": [(yahoo symbol, company name)]}]"""
+    groups, cur = [], None
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.split("#")[0].strip()
+            if not line:
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                cur = {"name": line[1:-1].strip(), "items": []}
+                groups.append(cur)
+                continue
+            if cur is None:
+                cur = {"name": "Watchlist", "items": []}
+                groups.append(cur)
+            sym, _, name = line.partition("|")
+            sym = re.sub(r"\s+(US|UN|UQ|UW|UA)$", "", sym.strip().upper()).replace("/", "-").replace(" ", "")
+            if sym:
+                cur["items"].append((sym, name.strip() or sym))
+    return groups
+
+
+def build_watchlist(path_in, path_out, spx):
+    groups = read_watchlist(path_in)
+    wl = {"generated": datetime.now(timezone.utc).isoformat(), "groups": [], "errors": [],
+          "spx": {"m1": spx.get("m1"), "ytd": spx.get("ytd"), "pct": spx.get("pct")} if spx else {}}
+
+    def safe2(fn, *a):
+        try:
+            return fn(*a), None
+        except Exception as e:  # noqa: BLE001
+            return None, f"{fn.__name__} {a[0]}: {e}"
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        jobs = []
+        for g in groups:
+            for sym, name in g["items"]:
+                feed = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(sym)}&region=US&lang=en-US"
+                jobs.append((g["name"], sym, name, ex.submit(safe2, yahoo, sym), ex.submit(safe2, news, sym, feed, 3)))
+        by = {g["name"]: {"name": g["name"], "rows": []} for g in groups}
+        for gname, sym, name, qf, nf in jobs:
+            q, err = qf.result()
+            nw, nerr = nf.result()
+            if err:
+                wl["errors"].append(err)
+                by[gname]["rows"].append({"symbol": sym, "label": name, "missing": True})
+                continue
+            q["label"] = name
+            q["news"] = [{"title": n["title"], "link": n["link"], "time": n["time"]} for n in (nw or [])]
+            if nerr:
+                wl["errors"].append(nerr)
+            by[gname]["rows"].append(q)
+    wl["groups"] = [by[g["name"]] for g in groups]
+    with open(path_out, "w") as f:
+        json.dump(wl, f, separators=(",", ":"))
+    n = sum(len(g["rows"]) for g in wl["groups"])
+    bad = sum(1 for g in wl["groups"] for r in g["rows"] if r.get("missing"))
+    print(f"wrote {path_out}: {n} stocks in {len(groups)} baskets, {bad} without data")
+    for e in wl["errors"]:
+        print("WARN watchlist", e)
+
+
 def main():
     out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "jgb": [], "news": [], "errors": []}
 
@@ -305,6 +376,13 @@ def main():
         json.dump(out, f, separators=(",", ":"))
     for e in out["errors"]:
         print("WARN", e)
+    try:
+        spx = next((r for r in out["sections"].get("US Indices", []) if r["symbol"] == "^GSPC"), {})
+        wl_in = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "watchlist.txt")
+        if os.path.exists(wl_in):
+            build_watchlist(wl_in, os.path.join(os.path.dirname(path) or ".", "watchlist.json"), spx)
+    except Exception as e:  # noqa: BLE001  (a watchlist problem must never block the macro page)
+        print("WARN watchlist:", e)
     print(f"wrote {path}: {total} quotes, {len(out['curve'])} curve pts, {len(out['news'])} headlines, {len(out['errors'])} errors")
 
 
