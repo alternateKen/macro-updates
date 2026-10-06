@@ -2,17 +2,15 @@ name: Update macro dashboard
 
 on:
   schedule:
-    # GitHub cron is UTC only and ignores daylight saving, so the schedule is written wide and the
-    # "gate" job below keeps only runs that fall in the right New York time window:
-    #   ~6:15am New York  = pre-market update
-    #   every 30 min from 9:05am to ~4:35pm New York = market hours and the post-close update
-    # (minutes 5 and 35 rather than 0 and 30: GitHub queues are busiest on the hour)
+    # GitHub cron is UTC only and ignores daylight saving, so each time is listed twice
+    # (summer + winter) and the "gate" job below keeps only the one that is really
+    # ~6:15am or ~4:45pm New York time. Early start leaves room for GitHub's queue delay.
     - cron: "15 10,11 * * 1-5"
-    - cron: "5,35 13-21 * * 1-5"
+    - cron: "45 20,21 * * 1-5"
   workflow_dispatch: {}   # lets you press "Run workflow" for an on-demand refresh
   push:
     branches: [main]
-    paths: ["docs/**", "scripts/**", "watchlist.txt", ".github/workflows/update.yml"]
+    paths: ["docs/**", "scripts/**", ".github/workflows/update.yml"]
 
 permissions:
   contents: read
@@ -33,7 +31,7 @@ jobs:
         run: |
           H=$(TZ=America/New_York date +%-H)
           echo "New York hour is $H, event is ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" != "schedule" ] || [ "$H" = "6" ] || { [ "$H" -ge 9 ] && [ "$H" -le 16 ]; }; then
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$H" = "6" ] || [ "$H" = "16" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
           else
             echo "go=false" >> "$GITHUB_OUTPUT"
@@ -42,14 +40,14 @@ jobs:
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Fetch fresh market data
-        timeout-minutes: 7
+        timeout-minutes: 4
         run: python scripts/fetch_data.py docs/data.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
