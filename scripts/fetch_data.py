@@ -104,7 +104,7 @@ def yahoo(symbol):
 
 def fred(series_id, start_days=420):
     start = (datetime.now(timezone.utc) - timedelta(days=start_days)).strftime("%Y-%m-%d")
-    raw = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={start}").decode()
+    raw = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={start}", tries=3, timeout=40).decode()
     rows = []
     for r in list(csv.reader(io.StringIO(raw)))[1:]:
         if len(r) == 2 and r[1] not in (".", ""):
