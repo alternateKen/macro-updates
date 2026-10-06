@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
 
-UA = {"User-Agent": "Mozilla/5.0 (macro-dashboard)"}
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      "Accept": "text/csv,application/json,text/html;q=0.9,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.9"}
 
 # (symbol, label) grouped by dashboard section
 YAHOO = {
@@ -32,7 +33,8 @@ YAHOO = {
 # Treasury par-yield columns (normalised, see treasury()) and display labels
 CURVE = [("1mo", "1M"), ("3mo", "3M"), ("6mo", "6M"), ("1yr", "1Y"), ("2yr", "2Y"), ("3yr", "3Y"),
          ("5yr", "5Y"), ("7yr", "7Y"), ("10yr", "10Y"), ("20yr", "20Y"), ("30yr", "30Y")]
-# Credit spreads are only published by FRED (best effort; page copes if missing)
+# Credit spreads are only published by FRED, which times out from GitHub's servers. Best effort:
+# one 15-second try, page copes if missing (HYG / LQD in the Volatility & Credit table are the substitute).
 OAS = [("BAMLH0A0HYM2", "High-yield spread (OAS)"), ("BAMLC0A0CM", "IG corporate spread (OAS)")]
 
 NEWS = [
@@ -104,7 +106,7 @@ def yahoo(symbol):
 
 def fred(series_id, start_days=420):
     start = (datetime.now(timezone.utc) - timedelta(days=start_days)).strftime("%Y-%m-%d")
-    raw = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={start}", tries=3, timeout=40).decode()
+    raw = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={start}", tries=1, timeout=15).decode()
     rows = []
     for r in list(csv.reader(io.StringIO(raw)))[1:]:
         if len(r) == 2 and r[1] not in (".", ""):
