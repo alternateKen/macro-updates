@@ -98,9 +98,9 @@ function ratesBlock(d){
   const rows=d.fred.map(r=>{
     const bp=r.d1==null?null:r.d1*100;
     return `<tr><td class="name">${r.label}</td><td>${fmt(r.now,2)}${r.id.startsWith('BAML')||r.id.startsWith('T10Y')||r.id=='DFII10'||r.id=='DFF'?'%':''}</td><td class="${cls(bp)}">${bp==null?'–':(bp>0?'+':'')+bp.toFixed(1)+' bp'}</td><td class="hide-sm">${fmt(r.w1,2)}</td><td class="hide-sm">${fmt(r.m1,2)}</td><td>${r.date.slice(5)}</td></tr>`}).join('');
-  const steep=two&&ten?`<div class="note">Today's 2s10s: <b>${((ten.now-two.now)*100).toFixed(0)} bp</b> (1 month ago: ${two.m1!=null&&ten.m1!=null?((ten.m1-two.m1)*100).toFixed(0):'–'} bp). FRED data is end-of-day and lags by one business day.</div>`:'';
+  const steep=two&&ten?`<div class="note">Today's 2s10s: <b>${((ten.now-two.now)*100).toFixed(0)} bp</b> (1 month ago: ${two.m1!=null&&ten.m1!=null?((ten.m1-two.m1)*100).toFixed(0):'–'} bp). Treasury data is end-of-day and lags by one business day.</div>`:'';
   return `<section id="curve-sec" class="wide"><h2>US Treasury yield curve</h2>${curveChart(d.curve)}${steep}</section>
-  <section id="spreads"><h2>Spreads, real yields &amp; credit (FRED)</h2><table><tr><th></th><th>Now</th><th>1-day</th><th class="hide-sm">1W ago</th><th class="hide-sm">1M ago</th><th>As of</th></tr>${rows}</table></section>`;
+  <section id="spreads"><h2>Spreads, real yields &amp; credit (US Treasury / FRED)</h2><table><tr><th></th><th>Now</th><th>1-day</th><th class="hide-sm">1W ago</th><th class="hide-sm">1M ago</th><th>As of</th></tr>${rows}</table></section>`;
 }
 function newsBlock(items){
   if(!items.length)return '';
@@ -116,19 +116,61 @@ function briefText(d){
   L.push('4. Commodities, dollar, FX, crypto: the main moves and what they imply for inflation, growth and risk appetite.');
   L.push('5. Cross-asset consistency: where do the signals agree or disagree? What looks odd?');
   L.push('6. Levels and risks to watch today, including any US data releases or Fed speakers from the headlines.');
-  L.push('Be concise, use short bullets, and say clearly where data is end-of-day (FRED) rather than live.');
+  L.push('Be concise, use short bullets, and say clearly where data is end-of-day (Treasury, MOF, FRED) rather than live.');
   L.push('','DATA (generated '+d.generated+')');
   for(const [sec,rows] of Object.entries(d.sections)){
     L.push('','## '+sec);
     rows.forEach(r=>L.push(`${r.label}: ${f(r.last,Math.abs(r.last)<10?4:2)} | day ${p(r.pct)} | 1W ${p(r.w1)} | 1M ${p(r.m1)} | YTD ${p(r.ytd)} | 52w range ${f(r.lo52)}-${f(r.hi52)}`));
   }
-  L.push('','## US Treasury curve, % (latest | 1W ago | 1M ago | 1Y ago), FRED end-of-day');
+  L.push('','## US Treasury curve, % (latest | 1W ago | 1M ago | 1Y ago), Treasury end-of-day');
   d.curve.forEach(c=>L.push(`${c.label}: ${f(c.now)} | ${f(c.w1)} | ${f(c.m1)} | ${f(c.y1)}`));
   L.push('','## Spreads, real yields, credit (FRED, now | 1-day change | 1W ago | 1M ago)');
   d.fred.forEach(r=>L.push(`${r.label}: ${f(r.now)} | ${f(r.d1,3)} | ${f(r.w1)} | ${f(r.m1)}`));
+  L.push('','## Japan JGB yields % (now | 1-day change | 1W ago | 1M ago), MOF end-of-day');
+  (d.jgb||[]).forEach(r=>L.push(`${r.label}: ${f(r.now,3)} | ${f(r.d1,3)} | ${f(r.w1,3)} | ${f(r.m1,3)}`));
   L.push('','## Headlines');
   d.news.forEach(n=>L.push(`- [${n.source}] ${n.title}`));
   return L.join('\n');
+}
+function jgbBlock(rows){
+  if(!rows||!rows.length)return '';
+  const body=rows.map(r=>{
+    const d=r.d1==null?null:r.d1*100;
+    const w=r.w1==null?null:(r.now-r.w1)*100, m=r.m1==null?null:(r.now-r.m1)*100;
+    const b=v=>v==null?'–':(v>0?'+':'')+v.toFixed(1)+' bp';
+    return `<tr><td class="name">${r.label}</td><td>${fmt(r.now,3)}%</td><td class="${cls(d)}">${b(d)}</td><td class="${cls(w)} hide-sm">${b(w)}</td><td class="${cls(m)} hide-sm">${b(m)}</td><td>${r.date.slice(5)}</td><td class="${cls(m)}">${spark(r.spark)}</td></tr>`}).join('');
+  return `<section id="jgb"><h2>Japan government bond yields (MOF, end-of-day)</h2><table><tr><th></th><th>Yield</th><th>1-day</th><th class="hide-sm">1W chg</th><th class="hide-sm">1M chg</th><th>As of</th><th>60d</th></tr>${body}</table></section>`;
+}
+function snapshot(d){
+  const all=Object.values(d.sections).flat();
+  const q=sym=>all.find(r=>r.symbol===sym);
+  const B=[];
+  const mv=(r,dg=2)=>r?`${r.label} ${fmt(r.last,dg)} (${pc(r.pct)})`:null;
+  const eq=['ES=F','NQ=F','RTY=F'].map(s=>q(s)).filter(Boolean);
+  if(eq.length)B.push(['Equity futures',eq.map(r=>`${r.label} ${pc(r.pct)}`).join(' · ')+(q('^VIX')?` · VIX ${fmt(q('^VIX').last,1)} (${pc(q('^VIX').pct)})${q('^VIX').last>=25?' ⚠ elevated':q('^VIX').last>=20?' – above 20':''}`:'')]);
+  const g=id=>d.fred.find(r=>r.id===id), c=l=>d.curve.find(p=>p.label===l);
+  const t10=c('10Y'),t2=c('2Y'),s210=g('T10Y2Y');
+  if(t10){const ch=t10.w1==null?'':` (1W ${((t10.now-t10.w1)*100>0?'+':'')+((t10.now-t10.w1)*100).toFixed(0)} bp)`;
+    B.push(['US rates (end-of-day)',`10y ${fmt(t10.now)}%${ch}`+(t2?` · 2y ${fmt(t2.now)}%`:'')+(s210?` · 2s10s ${(s210.now*100).toFixed(0)} bp (${s210.d1==null?'–':((s210.d1*100>0?'+':'')+(s210.d1*100).toFixed(1))} bp d/d)`:'')]);}
+  const y10=q('^TNX');if(y10)B.push(['10y live (Yahoo)',`${fmt(y10.last,3)}% (${y10.chg==null?'–':((y10.chg>0?'+':'')+(y10.chg*100).toFixed(1))} bp)`]);
+  const j10=d.jgb&&d.jgb.find(r=>r.id==='JGB10Y');
+  if(j10)B.push(['Japan',`JGB 10y ${fmt(j10.now,3)}% (${j10.d1==null?'–':((j10.d1*100>0?'+':'')+(j10.d1*100).toFixed(1))} bp)`+(q('USDJPY=X')?` · USD/JPY ${fmt(q('USDJPY=X').last,2)} (${pc(q('USDJPY=X').pct)})`:'')+(q('^N225')?` · Nikkei ${pc(q('^N225').pct)}`:'')]);
+  const real=g('DFII10'),be=g('T10YIE'),hy=g('BAMLH0A0HYM2');
+  const cr=[real&&`10y real ${fmt(real.now)}%`,be&&`breakeven ${fmt(be.now)}%`,hy&&`HY OAS ${fmt(hy.now)}%`,q('^MOVE')&&`MOVE ${fmt(q('^MOVE').last,1)} (${pc(q('^MOVE').pct)})`,q('HYG')&&`HYG ${pc(q('HYG').pct)}`].filter(Boolean);
+  if(cr.length)B.push(['Real yields, credit, bond vol',cr.join(' · ')]);
+  const sec=(d.sections['Sectors (SPDR ETFs)']||[]).slice().sort((a,b)=>b.pct-a.pct);
+  if(sec.length>=4)B.push(['Sectors',`Leaders: ${sec.slice(0,2).map(r=>r.label+' '+pc(r.pct)).join(', ')} · Laggards: ${sec.slice(-2).reverse().map(r=>r.label+' '+pc(r.pct)).join(', ')}`]);
+  const cm=['CL=F','BZ=F','GC=F','HG=F','NG=F'].map(s=>q(s)).filter(Boolean);
+  if(cm.length)B.push(['Commodities',cm.map(r=>`${r.label} ${fmt(r.last,r.last<20?3:2)} (${pc(r.pct)})`).join(' · ')]);
+  const fx=['DX-Y.NYB','EURUSD=X','USDJPY=X','BTC-USD'].map(s=>q(s)).filter(Boolean);
+  if(fx.length)B.push(['Dollar, FX, crypto',fx.map(r=>`${r.label} ${fmt(r.last,r.last<10?4:2)} (${pc(r.pct)})`).join(' · ')]);
+  const movers=all.filter(r=>r.pct!=null&&Math.abs(r.pct)>=2&&!(r.symbol||'').endsWith('=F')||r.pct!=null&&Math.abs(r.pct)>=3).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
+  const seen=new Set(),mm=movers.filter(r=>!seen.has(r.label)&&seen.add(r.label)).slice(0,8);
+  if(mm.length)B.push(['Big movers (≥2%)',mm.map(r=>`${r.label} ${pc(r.pct)}`).join(' · ')]);
+  const hd=d.news.slice(0,3).map(n=>n.title);
+  if(hd.length)B.push(['Top headlines',hd.join(' | ')]);
+  return `<section id="snapshot" class="wide"><h2>Morning snapshot (auto-generated from the numbers below)</h2><table class="snap">`+
+    B.map(([k,v])=>`<tr><td class="name" style="vertical-align:top;white-space:nowrap">${k}</td><td style="text-align:left;white-space:normal">${v}</td></tr>`).join('')+`</table></section>`;
 }
 function claudeBlock(){
   return `<section id="claude-brief" class="wide"><h2>Daily brief with Claude (free with your Claude Pro chat)</h2>
@@ -143,19 +185,19 @@ const notes=`<section id="notes"><h2>My notes for today (saved only in this brow
 function render(d){
   const S=d.sections;
   const gen=new Date(d.generated);
-  document.getElementById('stamp').textContent='Data refreshed '+gen.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'})+' · Yahoo Finance · FRED · public RSS';
+  document.getElementById('stamp').textContent='Data refreshed '+gen.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'})+' · Yahoo Finance · US Treasury · NY Fed · Japan MOF · FRED · RSS';
   const age=(Date.now()-gen)/36e5;
   if(age>30){const b=document.getElementById('banner');b.style.display='block';b.textContent=`Warning: this data is ${Math.round(age)} hours old. The automatic refresh may have failed (check the Actions tab in GitHub).`}
   const parts=[
-    quoteTable('Futures',S['Futures']),quoteTable('US Indices',S['US Indices']),
+    snapshot(d),quoteTable('Futures',S['Futures']),quoteTable('US Indices',S['US Indices']),
     S['Sectors (SPDR ETFs)']?heat(S['Sectors (SPDR ETFs)']):'',
-    ratesBlock(d),quoteTable('Rates (Yahoo, intraday)',S['Rates (Yahoo, intraday)'],true),
+    ratesBlock(d),quoteTable('Rates (Yahoo, intraday)',S['Rates (Yahoo, intraday)'],true),jgbBlock(d.jgb),
     quoteTable('Volatility & Credit ETFs',S['Volatility & Credit ETFs']),quoteTable('Mega-caps & Themes',S['Mega-caps & Themes']),quoteTable('Energy',S['Energy']),quoteTable('Metals',S['Metals']),quoteTable('Agriculture',S['Agriculture']),quoteTable('Other commodities',S['Other commodities']),
     quoteTable('FX',S['FX']),quoteTable('Crypto',S['Crypto']),quoteTable('Global Indices',S['Global Indices']),
     claudeBlock(),newsBlock(d.news),calendar,notes
   ].join('');
   document.getElementById('main').innerHTML=parts;
-  const ids=[['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['global-indices','Global'],['claude-brief','Claude'],['news','News'],['calendar','Calendar'],['notes','Notes']];
+  const ids=[['snapshot','Snapshot'],['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['jgb','JGB'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['global-indices','Global'],['claude-brief','Claude'],['news','News'],['calendar','Calendar'],['notes','Notes']];
   document.getElementById('nav').innerHTML=ids.filter(([i])=>document.getElementById(i)).map(([i,l])=>`<a href="#${i}">${l}</a>`).join('');
   const n=document.getElementById('note');
   try{n.value=localStorage.getItem('macro-note-'+new Date().toDateString())||'';n.addEventListener('input',()=>localStorage.setItem('macro-note-'+new Date().toDateString(),n.value))}catch(e){}

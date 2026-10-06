@@ -29,12 +29,11 @@ YAHOO = {
     "Crypto": [("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum")],
 }
 
-# FRED series for the Treasury curve (percent), plus spreads / credit
-CURVE = [("DGS1MO", "1M"), ("DGS3MO", "3M"), ("DGS6MO", "6M"), ("DGS1", "1Y"), ("DGS2", "2Y"), ("DGS3", "3Y"),
-         ("DGS5", "5Y"), ("DGS7", "7Y"), ("DGS10", "10Y"), ("DGS20", "20Y"), ("DGS30", "30Y")]
-OTHER_FRED = [("T10Y2Y", "10y-2y spread"), ("T10Y3M", "10y-3m spread"), ("DFII10", "10y real yield"),
-              ("T10YIE", "10y breakeven"), ("DFF", "Fed funds effective"), ("BAMLH0A0HYM2", "High-yield spread (OAS)"),
-              ("BAMLC0A0CM", "IG corporate spread (OAS)")]
+# Treasury par-yield columns (normalised, see treasury()) and display labels
+CURVE = [("1mo", "1M"), ("3mo", "3M"), ("6mo", "6M"), ("1yr", "1Y"), ("2yr", "2Y"), ("3yr", "3Y"),
+         ("5yr", "5Y"), ("7yr", "7Y"), ("10yr", "10Y"), ("20yr", "20Y"), ("30yr", "30Y")]
+# Credit spreads are only published by FRED (best effort; page copes if missing)
+OAS = [("BAMLH0A0HYM2", "High-yield spread (OAS)"), ("BAMLC0A0CM", "IG corporate spread (OAS)")]
 
 NEWS = [
     ("CNBC Markets", "https://www.cnbc.com/id/20910258/device/rss/rss.html"),
@@ -119,6 +118,82 @@ def value_on_or_before(rows, days_back):
     return cand[-1] if cand else None
 
 
+
+def _num(x):
+    try:
+        return float(str(x).strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def treasury(kind, years):
+    """US Treasury daily par yield / real yield curve. Returns {normalised column: [(iso date, value)]} ascending."""
+    cols = {}
+    for y in years:
+        url = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
+               f"{y}/all?type={kind}&field_tdr_date_value={y}&page&_format=csv")
+        raw = get(url, timeout=20).decode("utf-8-sig")
+        for row in csv.DictReader(io.StringIO(raw)):
+            try:
+                d = datetime.strptime(row["Date"].strip(), "%m/%d/%Y").strftime("%Y-%m-%d")
+            except Exception:  # noqa: BLE001
+                continue
+            for k, v in row.items():
+                if k == "Date":
+                    continue
+                n = _num(v)
+                if n is not None:
+                    cols.setdefault(k.lower().replace(" ", ""), []).append((d, n))
+    return {k: sorted(v) for k, v in cols.items()}
+
+
+def effr():
+    raw = json.loads(get("https://markets.newyorkfed.org/api/rates/unsecured/effr/last/70.json"))
+    return sorted((r["effectiveDate"], float(r["percentRate"])) for r in raw["refRates"])
+
+
+def jgb():
+    """Japan MOF JGB yields. Returns {tenor: [(iso date, value)]} ascending."""
+    last = None
+    for name in ("jgbcm.csv", "jgbcm_all.csv"):
+        try:
+            raw = get("https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/" + name, timeout=25).decode("utf-8-sig", "ignore")
+            break
+        except Exception as e:  # noqa: BLE001
+            last = e
+    else:
+        raise last
+    rows = list(csv.reader(io.StringIO(raw)))
+    hi = next(i for i, r in enumerate(rows) if r and r[0].strip().lower() == "date")
+    head = [h.strip() for h in rows[hi]]
+    cols = {h: [] for h in head[1:]}
+    for r in rows[hi + 1:]:
+        if not r or not r[0].strip():
+            continue
+        try:
+            d = datetime.strptime(r[0].strip(), "%Y/%m/%d").strftime("%Y-%m-%d")
+        except Exception:  # noqa: BLE001
+            continue
+        for h, v in zip(head[1:], r[1:]):
+            n = _num(v)
+            if n is not None:
+                cols[h].append((d, n))
+    return {k: v[-400:] for k, v in cols.items() if v}
+
+
+def derive(a, b, fn):
+    """Combine two (date, value) series on matching dates."""
+    bm = dict(b)
+    return [(d, fn(v, bm[d])) for d, v in a if d in bm]
+
+
+def entry(sid, label, rows):
+    return {"id": sid, "label": label, "date": rows[-1][0], "now": rows[-1][1],
+            "d1": rows[-1][1] - rows[-2][1] if len(rows) > 1 else None,
+            "w1": value_on_or_before(rows, 7), "m1": value_on_or_before(rows, 30),
+            "spark": [v for _, v in rows[-60:]]}
+
+
 def news(name, url, limit=8):
     root = ET.fromstring(get(url))
     items = []
@@ -131,7 +206,7 @@ def news(name, url, limit=8):
 
 
 def main():
-    out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "news": [], "errors": []}
+    out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "jgb": [], "news": [], "errors": []}
 
     def safe(fn, *a):
         try:
@@ -139,10 +214,14 @@ def main():
         except Exception as e:  # noqa: BLE001
             return None, f"{a[0]}: {e}"
 
+    yr = datetime.now(timezone.utc).year
     with ThreadPoolExecutor(max_workers=8) as ex:
         yfut = {sec: [(label, ex.submit(safe, yahoo, sym)) for sym, label in items] for sec, items in YAHOO.items()}
-        cfut = [(sid, label, ex.submit(safe, fred, sid)) for sid, label in CURVE]
-        ffut = [(sid, label, ex.submit(safe, fred, sid)) for sid, label in OTHER_FRED]
+        nom_f = ex.submit(safe, treasury, "daily_treasury_yield_curve", (yr - 1, yr))
+        real_f = ex.submit(safe, treasury, "daily_treasury_real_yield_curve", (yr - 1, yr))
+        effr_f = ex.submit(safe, effr)
+        jgb_f = ex.submit(safe, jgb)
+        oas_f = [(sid, label, ex.submit(safe, fred, sid)) for sid, label in OAS]
         nfut = [ex.submit(safe, news, name, url) for name, url in NEWS]
 
         for sec, lst in yfut.items():
@@ -155,23 +234,47 @@ def main():
                     d["label"] = label
                     rows.append(d)
             out["sections"][sec] = rows
-        for sid, label, fu in cfut:
+
+        nom, err = nom_f.result()
+        if err:
+            out["errors"].append("treasury nominal: " + err)
+        else:
+            for key, label in CURVE:
+                r = nom.get(key)
+                if r:
+                    out["curve"].append({"id": key, "label": label, "date": r[-1][0], "now": r[-1][1],
+                                         "w1": value_on_or_before(r, 7), "m1": value_on_or_before(r, 30),
+                                         "y1": value_on_or_before(r, 365)})
+            if nom.get("10yr") and nom.get("2yr"):
+                out["fred"].append(entry("T10Y2Y", "10y-2y spread", derive(nom["10yr"], nom["2yr"], lambda a, b: a - b)))
+            if nom.get("10yr") and nom.get("3mo"):
+                out["fred"].append(entry("T10Y3M", "10y-3m spread", derive(nom["10yr"], nom["3mo"], lambda a, b: a - b)))
+            real, err = real_f.result()
+            if err:
+                out["errors"].append("treasury real: " + err)
+            else:
+                rk = real.get("10yr")
+                if rk:
+                    out["fred"].append(entry("DFII10", "10y real yield", rk))
+                    if nom.get("10yr"):
+                        out["fred"].append(entry("T10YIE", "10y breakeven", derive(nom["10yr"], rk, lambda a, b: a - b)))
+        e, err = effr_f.result()
+        out["errors"].append("effr: " + err) if err else out["fred"].append(entry("DFF", "Fed funds effective", e))
+        for sid, label, fu in oas_f:
             r, err = fu.result()
             if err:
                 out["errors"].append(err)
             else:
-                out["curve"].append({"id": sid, "label": label, "date": r[-1][0], "now": r[-1][1],
-                                     "w1": value_on_or_before(r, 7), "m1": value_on_or_before(r, 30),
-                                     "y1": value_on_or_before(r, 365)})
-        for sid, label, fu in ffut:
-            r, err = fu.result()
-            if err:
-                out["errors"].append(err)
-            else:
-                out["fred"].append({"id": sid, "label": label, "date": r[-1][0], "now": r[-1][1],
-                                    "d1": r[-1][1] - r[-2][1] if len(r) > 1 else None,
-                                    "w1": value_on_or_before(r, 7), "m1": value_on_or_before(r, 30),
-                                    "spark": [v for _, v in r[-60:]]})
+                out["fred"].append(entry(sid, label, r))
+
+        j, err = jgb_f.result()
+        if err:
+            out["errors"].append("jgb: " + err)
+        else:
+            for t in ("2Y", "5Y", "10Y", "20Y", "30Y", "40Y"):
+                r = j.get(t)
+                if r:
+                    out["jgb"].append(entry("JGB" + t, "JGB " + t, r))
         for fu in nfut:
             r, err = fu.result()
             if err:
@@ -187,6 +290,8 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "docs/data.json"
     with open(path, "w") as f:
         json.dump(out, f, separators=(",", ":"))
+    for e in out["errors"]:
+        print("WARN", e)
     print(f"wrote {path}: {total} quotes, {len(out['curve'])} curve pts, {len(out['news'])} headlines, {len(out['errors'])} errors")
 
 
