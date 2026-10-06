@@ -22,12 +22,14 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Fetch fresh market data
+        timeout-minutes: 4
         run: python scripts/fetch_data.py docs/data.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
