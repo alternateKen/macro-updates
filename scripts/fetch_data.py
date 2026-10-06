@@ -154,15 +154,18 @@ def effr():
 
 def jgb():
     """Japan MOF JGB yields. Returns {tenor: [(iso date, value)]} ascending."""
-    last = None
-    for name in ("jgbcm.csv", "jgbcm_all.csv"):
+    base = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
+    tried = []
+    for name in ("historical/jgbcme_all.csv", "jgbcme.csv", "jgbcm.csv", "jgbcm_all.csv"):
         try:
-            raw = get("https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/" + name, timeout=25).decode("utf-8-sig", "ignore")
-            break
+            raw = get(base + name, tries=1, timeout=25).decode("utf-8-sig", "ignore")
+            if "date" in raw[:400].lower():
+                break
+            tried.append(f"{name}: unexpected content")
         except Exception as e:  # noqa: BLE001
-            last = e
+            tried.append(f"{name}: {e}")
     else:
-        raise last
+        raise RuntimeError("; ".join(tried))
     rows = list(csv.reader(io.StringIO(raw)))
     hi = next(i for i, r in enumerate(rows) if r and r[0].strip().lower() == "date")
     head = [h.strip() for h in rows[hi]]
@@ -212,7 +215,7 @@ def main():
         try:
             return fn(*a), None
         except Exception as e:  # noqa: BLE001
-            return None, f"{a[0]}: {e}"
+            return None, f"{fn.__name__} {a[0] if a else ''}: {e}".replace("  ", " ")
 
     yr = datetime.now(timezone.utc).year
     with ThreadPoolExecutor(max_workers=8) as ex:
