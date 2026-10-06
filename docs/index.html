@@ -12,8 +12,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system
 header{padding:16px 20px 8px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:baseline;justify-content:space-between}
 h1{font-size:20px;margin:0}
 .stamp{color:var(--mute);font-size:12px}
-nav{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 8px;position:sticky;top:0;background:var(--bg);z-index:5}
-nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:4px 10px;border-radius:99px;font-size:12px}
+nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding:0 20px 8px;position:sticky;top:0;background:var(--bg);z-index:5}
+nav a{flex:none;white-space:nowrap;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:4px 10px;border-radius:99px;font-size:12px}
 main{padding:0 20px 40px;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr))}
 section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow:hidden}
 section.wide{grid-column:1/-1}
@@ -40,6 +40,25 @@ svg.spark{width:70px;height:20px;vertical-align:middle}
 .legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
 .note{color:var(--mute);font-size:12px;margin-top:6px}
 textarea{width:100%;min-height:110px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
+
+.snap-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-bottom:10px}
+.snap-head h2{margin:0}
+.tone{padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--line)}
+.tone.up{color:var(--up);border-color:var(--up)}.tone.dn{color:var(--dn);border-color:var(--dn)}.tone.mu{color:var(--mute)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:8px;margin-bottom:14px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.tl{font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.tv{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin:2px 0}
+.tc{font-size:12px;font-variant-numeric:tabular-nums;color:var(--mute)}
+.snap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;margin-bottom:10px}
+h3{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;font-weight:600}
+.snap-grid h3:first-child{margin-top:0}
+.flags{margin:0;padding:0;list-style:none}
+.flags li{padding:6px 0 6px 10px;border-left:3px solid var(--line);margin-bottom:6px;line-height:1.4}
+.sub{font-size:11px;color:var(--mute);margin:6px 0 3px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{border:1px solid var(--line);border-radius:99px;padding:2px 9px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hl{margin:0;padding:0}
 </style>
 </head>
 <body>
@@ -144,33 +163,62 @@ function jgbBlock(rows){
 function snapshot(d){
   const all=Object.values(d.sections).flat();
   const q=sym=>all.find(r=>r.symbol===sym);
-  const B=[];
-  const mv=(r,dg=2)=>r?`${r.label} ${fmt(r.last,dg)} (${pc(r.pct)})`:null;
-  const eq=['ES=F','NQ=F','RTY=F'].map(s=>q(s)).filter(Boolean);
-  if(eq.length)B.push(['Equity futures',eq.map(r=>`${r.label} ${pc(r.pct)}`).join(' · ')+(q('^VIX')?` · VIX ${fmt(q('^VIX').last,1)} (${pc(q('^VIX').pct)})${q('^VIX').last>=25?' ⚠ elevated':q('^VIX').last>=20?' – above 20':''}`:'')]);
+  const arrow=v=>v==null?'':v>0?'▲ ':v<0?'▼ ':'';
+  const bp=(v,dg=1)=>v==null?'–':(v>0?'+':'')+(v*100).toFixed(dg)+' bp';
+  const tile=(label,val,chg,num,mode)=>{
+    const c=mode==='neutral'?'':mode==='invert'?cls(num==null?null:-num):cls(num);
+    return `<div class="tile"><div class="tl">${label}</div><div class="tv">${val}</div><div class="tc ${c}">${arrow(num)}${chg}</div></div>`};
+  const qt=(sym,label,dg,mode)=>{const r=q(sym);return r?tile(label,fmt(r.last,dg),pc(r.pct),r.pct,mode):''};
   const g=id=>d.fred.find(r=>r.id===id), c=l=>d.curve.find(p=>p.label===l);
-  const t10=c('10Y'),t2=c('2Y'),s210=g('T10Y2Y');
-  if(t10){const ch=t10.w1==null?'':` (1W ${((t10.now-t10.w1)*100>0?'+':'')+((t10.now-t10.w1)*100).toFixed(0)} bp)`;
-    B.push(['US rates (end-of-day)',`10y ${fmt(t10.now)}%${ch}`+(t2?` · 2y ${fmt(t2.now)}%`:'')+(s210?` · 2s10s ${(s210.now*100).toFixed(0)} bp (${s210.d1==null?'–':((s210.d1*100>0?'+':'')+(s210.d1*100).toFixed(1))} bp d/d)`:'')]);}
-  const y10=q('^TNX');if(y10)B.push(['10y live (Yahoo)',`${fmt(y10.last,3)}% (${y10.chg==null?'–':((y10.chg>0?'+':'')+(y10.chg*100).toFixed(1))} bp)`]);
-  const j10=d.jgb&&d.jgb.find(r=>r.id==='JGB10Y');
-  if(j10)B.push(['Japan',`JGB 10y ${fmt(j10.now,3)}% (${j10.d1==null?'–':((j10.d1*100>0?'+':'')+(j10.d1*100).toFixed(1))} bp)`+(q('USDJPY=X')?` · USD/JPY ${fmt(q('USDJPY=X').last,2)} (${pc(q('USDJPY=X').pct)})`:'')+(q('^N225')?` · Nikkei ${pc(q('^N225').pct)}`:'')]);
-  const real=g('DFII10'),be=g('T10YIE'),hy=g('BAMLH0A0HYM2');
-  const cr=[real&&`10y real ${fmt(real.now)}%`,be&&`breakeven ${fmt(be.now)}%`,hy&&`HY OAS ${fmt(hy.now)}%`,q('^MOVE')&&`MOVE ${fmt(q('^MOVE').last,1)} (${pc(q('^MOVE').pct)})`,q('HYG')&&`HYG ${pc(q('HYG').pct)}`].filter(Boolean);
-  if(cr.length)B.push(['Real yields, credit, bond vol',cr.join(' · ')]);
+  const t10=q('^TNX'), s210=g('T10Y2Y'), j10=(d.jgb||[]).find(r=>r.id==='JGB10Y');
+  const tiles=[
+    qt('ES=F','S&amp;P 500 fut',0), qt('NQ=F','Nasdaq 100 fut',0), qt('RTY=F','Russell 2000 fut',0),
+    qt('^VIX','VIX',2,'invert'),
+    t10?tile('US 10y (live)',fmt(t10.last,3)+'%',bp(t10.chg,1),t10.chg,'neutral'):'',
+    s210?tile('2s10s spread',(s210.now*100).toFixed(0)+' bp',s210.d1==null?'–':bp(s210.d1)+' d/d',s210.d1,'neutral'):'',
+    j10?tile('JGB 10y',fmt(j10.now,3)+'%',j10.d1==null?'–':bp(j10.d1)+' d/d',j10.d1,'neutral'):'',
+    qt('USDJPY=X','USD/JPY',2), qt('DX-Y.NYB','Dollar index',2),
+    qt('CL=F','WTI crude',2), qt('GC=F','Gold',0), qt('BTC-USD','Bitcoin',0)
+  ].join('');
+
+  // risk tone: +1 / -1 per signal, thresholds avoid noise
+  let score=0;const sig=(v,th,inv)=>{if(v==null)return;const x=inv?-v:v;score+=x>th?1:x<-th?-1:0};
+  sig(q('ES=F')?.pct,0.15);sig(q('NQ=F')?.pct,0.15);sig(q('^VIX')?.pct,2,true);sig(q('HYG')?.pct,0.1);
+  const tone=score>=2?['Risk-on','up']:score<=-2?['Risk-off','dn']:['Mixed','mu'];
+
+  const F=[];
+  const vix=q('^VIX');
+  if(vix){const v=vix.last;F.push(`<b>Volatility:</b> VIX ${fmt(v,1)} – ${v<15?'calm':v<20?'normal':v<25?'elevated':'high stress'}${vix.pct!=null&&Math.abs(vix.pct)>=5?`, moving sharply (${pc(vix.pct)})`:''}`)}
+  const t2=c('2Y'),t10c=c('10Y');
+  if(s210&&t2&&t10c&&t2.w1!=null&&t10c.w1!=null){
+    const ch=((t10c.now-t2.now)-(t10c.w1-t2.w1))*100, lvl=(s210.now*100).toFixed(0);
+    F.push(`<b>Curve:</b> 2s10s at ${lvl} bp${s210.now<0?' (inverted)':''}; ${Math.abs(ch)<3?'little changed over 1 week':(ch>0?'steepened ':'flattened ')+Math.abs(ch).toFixed(0)+' bp over 1 week'}`)}
+  if(t10&&t10.chg!=null&&Math.abs(t10.chg*100)>=5)F.push(`<b>Rates:</b> US 10y ${t10.chg>0?'up':'down'} ${Math.abs(t10.chg*100).toFixed(1)} bp to ${fmt(t10.last,2)}%`);
+  if(j10&&j10.d1!=null&&Math.abs(j10.d1*100)>=3)F.push(`<b>Japan:</b> JGB 10y ${j10.d1>0?'up':'down'} ${Math.abs(j10.d1*100).toFixed(1)} bp to ${fmt(j10.now,2)}%`);
+  const spx=q('^GSPC'),rsp=q('RSP');
+  if(spx&&rsp&&spx.pct!=null&&rsp.pct!=null){const df=rsp.pct-spx.pct;if(Math.abs(df)>=0.3)F.push(`<b>Breadth:</b> ${df>0?'broad participation – equal-weight beating cap-weight':'narrow – mega-caps leading equal-weight'} (${df>0?'+':''}${df.toFixed(2)}%)`)}
+  const hyg=q('HYG');if(hyg&&hyg.pct!=null&&hyg.pct<=-0.4)F.push(`<b>Credit:</b> high-yield bonds weak (HYG ${pc(hyg.pct)})`);
+  [['CL=F','Oil'],['GC=F','Gold'],['HG=F','Copper'],['NG=F','Nat gas']].forEach(([s,n])=>{const r=q(s);if(r&&r.pct!=null&&Math.abs(r.pct)>=2)F.push(`<b>${n}:</b> ${pc(r.pct)} to ${fmt(r.last,2)}`)});
+  const dx=q('DX-Y.NYB');if(dx&&dx.pct!=null&&Math.abs(dx.pct)>=0.5)F.push(`<b>Dollar:</b> ${dx.pct>0?'stronger':'weaker'} (${pc(dx.pct)})`);
+  if(!F.length)F.push('Nothing unusual on the numbers today.');
+
   const sec=(d.sections['Sectors (SPDR ETFs)']||[]).slice().sort((a,b)=>b.pct-a.pct);
-  if(sec.length>=4)B.push(['Sectors',`Leaders: ${sec.slice(0,2).map(r=>r.label+' '+pc(r.pct)).join(', ')} · Laggards: ${sec.slice(-2).reverse().map(r=>r.label+' '+pc(r.pct)).join(', ')}`]);
-  const cm=['CL=F','BZ=F','GC=F','HG=F','NG=F'].map(s=>q(s)).filter(Boolean);
-  if(cm.length)B.push(['Commodities',cm.map(r=>`${r.label} ${fmt(r.last,r.last<20?3:2)} (${pc(r.pct)})`).join(' · ')]);
-  const fx=['DX-Y.NYB','EURUSD=X','USDJPY=X','BTC-USD'].map(s=>q(s)).filter(Boolean);
-  if(fx.length)B.push(['Dollar, FX, crypto',fx.map(r=>`${r.label} ${fmt(r.last,r.last<10?4:2)} (${pc(r.pct)})`).join(' · ')]);
-  const movers=all.filter(r=>r.pct!=null&&Math.abs(r.pct)>=2&&!(r.symbol||'').endsWith('=F')||r.pct!=null&&Math.abs(r.pct)>=3).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
-  const seen=new Set(),mm=movers.filter(r=>!seen.has(r.label)&&seen.add(r.label)).slice(0,8);
-  if(mm.length)B.push(['Big movers (≥2%)',mm.map(r=>`${r.label} ${pc(r.pct)}`).join(' · ')]);
-  const hd=d.news.slice(0,3).map(n=>n.title);
-  if(hd.length)B.push(['Top headlines',hd.join(' | ')]);
-  return `<section id="snapshot" class="wide"><h2>Morning snapshot (auto-generated from the numbers below)</h2><table class="snap">`+
-    B.map(([k,v])=>`<tr><td class="name" style="vertical-align:top;white-space:nowrap">${k}</td><td style="text-align:left;white-space:normal">${v}</td></tr>`).join('')+`</table></section>`;
+  const chip=r=>`<span class="chip ${cls(r.pct)}">${arrow(r.pct)}${r.label} ${pc(r.pct)}</span>`;
+  const sectors=sec.length>=6?`<div class="sub">Leaders</div><div class="chips">${sec.slice(0,3).map(chip).join('')}</div><div class="sub">Laggards</div><div class="chips">${sec.slice(-3).reverse().map(chip).join('')}</div>`:'';
+  const seen=new Set();
+  const mm=all.filter(r=>r.pct!=null&&Math.abs(r.pct)>=2&&!seen.has(r.label)&&seen.add(r.label)).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,8);
+  const movers=mm.length?`<div class="sub">Moves of 2% or more</div><div class="chips">${mm.map(chip).join('')}</div>`:'';
+  const hl=d.news.slice(0,4).map(n=>`<li><span class="src">${n.source}</span><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></li>`).join('');
+
+  return `<section id="snapshot" class="wide">
+   <div class="snap-head"><h2>Morning snapshot</h2><span class="tone ${tone[1]}">${tone[1]==='up'?'▲ ':tone[1]==='dn'?'▼ ':'● '}${tone[0]}</span><span class="note">Auto-generated from fixed rules on the data below, not AI</span></div>
+   <div class="tiles">${tiles}</div>
+   <div class="snap-grid">
+     <div><h3>What stands out</h3><ul class="flags">${F.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+     <div><h3>Where the action is</h3>${sectors}${movers}</div>
+   </div>
+   ${hl?`<h3>Top headlines</h3><ul class="hl news">${hl}</ul>`:''}
+  </section>`;
 }
 function claudeBlock(){
   return `<section id="claude-brief" class="wide"><h2>Daily brief with Claude (free with your Claude Pro chat)</h2>
