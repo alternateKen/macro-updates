@@ -152,20 +152,7 @@ def effr():
     return sorted((r["effectiveDate"], float(r["percentRate"])) for r in raw["refRates"])
 
 
-def jgb():
-    """Japan MOF JGB yields. Returns {tenor: [(iso date, value)]} ascending."""
-    base = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
-    tried = []
-    for name in ("historical/jgbcme_all.csv", "jgbcme.csv", "jgbcm.csv", "jgbcm_all.csv"):
-        try:
-            raw = get(base + name, tries=1, timeout=25).decode("utf-8-sig", "ignore")
-            if "date" in raw[:400].lower():
-                break
-            tried.append(f"{name}: unexpected content")
-        except Exception as e:  # noqa: BLE001
-            tried.append(f"{name}: {e}")
-    else:
-        raise RuntimeError("; ".join(tried))
+def _parse_mof(raw):
     rows = list(csv.reader(io.StringIO(raw)))
     hi = next(i for i, r in enumerate(rows) if r and r[0].strip().lower() == "date")
     head = [h.strip() for h in rows[hi]]
@@ -181,7 +168,28 @@ def jgb():
             n = _num(v)
             if n is not None:
                 cols[h].append((d, n))
-    return {k: v[-400:] for k, v in cols.items() if v}
+    return cols
+
+
+def jgb():
+    """Japan MOF JGB yields, merged from every MOF file that loads (the full-history file is only
+    updated monthly, the current file has the latest days). Returns {tenor: [(iso date, value)]}."""
+    base = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
+    merged, tried, ok = {}, [], []
+    for name in ("historical/jgbcme_all.csv", "jgbcme.csv", "jgbcm.csv", "jgbcm_all.csv"):
+        try:
+            raw = get(base + name, tries=1, timeout=25).decode("utf-8-sig", "ignore")
+            cols = _parse_mof(raw)
+        except Exception as e:  # noqa: BLE001
+            tried.append(f"{name}: {e}")
+            continue
+        ok.append(name)
+        for tenor, rows in cols.items():
+            merged.setdefault(tenor, {}).update(dict(rows))   # later (more current) files win
+    if not merged:
+        raise RuntimeError("; ".join(tried))
+    print("JGB files used:", ", ".join(ok), "| failed:", len(tried))
+    return {t: sorted(d.items())[-400:] for t, d in merged.items() if d}
 
 
 def derive(a, b, fn):
