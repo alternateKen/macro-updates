@@ -1,0 +1,44 @@
+name: Update macro dashboard
+
+on:
+  schedule:
+    # Weekdays 10:30 UTC (6:30am New York in summer / 5:30am in winter) and 20:30 UTC (post-close)
+    - cron: "30 10 * * 1-5"
+    - cron: "30 20 * * 1-5"
+  workflow_dispatch: {}   # lets you press "Run workflow" for an on-demand refresh
+  push:
+    branches: [main]
+    paths: ["docs/**", "scripts/**", ".github/workflows/update.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch fresh market data
+        run: python scripts/fetch_data.py docs/data.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
