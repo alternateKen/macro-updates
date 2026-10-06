@@ -242,8 +242,61 @@ def news(name, url, limit=8):
     return items
 
 
+# Bloomberg country suffix -> Yahoo suffixes to try, in order (Taiwan names are on either the main
+# board .TW or the over-the-counter board .TWO, so both are tried)
+BBG_SUFFIX = {"TT": [".TW", ".TWO"], "JP": [".T"], "HK": [".HK"], "NO": [".OL"], "LN": [".L"], "GR": [".DE"],
+              "GY": [".DE"], "FP": [".PA"], "NA": [".AS"], "SW": [".SW"], "KS": [".KS"], "AU": [".AX"],
+              "CN": [".TO"], "IT": [".MI"], "SM": [".MC"], "SS": [".ST"], "DC": [".CO"], "FH": [".HE"],
+              "IN": [".NS"], "SP": [".SI"]}
+US_SUFFIX = ("US", "UN", "UQ", "UW", "UA")
+# Yahoo suffix -> TradingView exchange prefix (for the live quotes box)
+TV_EXCH = {".TW": "TWSE", ".TWO": "TPEX", ".SZ": "SZSE", ".SS": "SSE", ".T": "TSE", ".HK": "HKEX", ".OL": "OSL",
+           ".L": "LSE", ".DE": "XETR", ".PA": "EURONEXT", ".AS": "EURONEXT", ".SW": "SIX", ".KS": "KRX",
+           ".AX": "ASX", ".TO": "TSX", ".MI": "MIL", ".MC": "BME", ".ST": "OMXSTO", ".CO": "OMXCOP",
+           ".HE": "OMXHEX", ".NS": "NSE", ".SI": "SGX"}
+
+
+def yahoo_candidates(code):
+    """'SHOP US' -> (['SHOP'], 'SHOP');  '2345 TT' -> (['2345.TW', '2345.TWO'], '2345 TT');  '6809 HK' -> (['6809.HK'], ...)"""
+    code = code.strip().upper()
+    m = re.match(r"^(.+?)\s+([A-Z]{2})$", code)
+    if not m:
+        return [code.replace("/", "-").replace(" ", "")], code
+    base, cc = m.group(1).replace(" ", "").replace("/", "-"), m.group(2)
+    if cc in US_SUFFIX:
+        return [base], base
+    if cc == "CH":   # mainland China: 6xxxxx = Shanghai, otherwise Shenzhen
+        return [base + (".SS" if base.startswith("6") else ".SZ")], code
+    if cc == "HK":
+        base = base.lstrip("0").zfill(4)
+    return [base + x for x in BBG_SUFFIX.get(cc, [""])], code
+
+
+def tv_symbol(ysym, exch_override=""):
+    base = ysym
+    for sfx in sorted(TV_EXCH, key=len, reverse=True):
+        if ysym.endswith(sfx):
+            base, ex = ysym[: -len(sfx)], TV_EXCH[sfx]
+            if ex == "HKEX":
+                base = base.lstrip("0") or "0"
+            return f"{exch_override or ex}:{base}"
+    return f"{exch_override}:{base}" if exch_override else base
+
+
+def yahoo_any(cands):
+    last = None
+    for c in cands:
+        try:
+            d = yahoo(c)
+            d["ysym"] = c
+            return d
+        except Exception as e:  # noqa: BLE001
+            last = e
+    raise last
+
+
 def read_watchlist(path):
-    """watchlist.txt -> [{"name": basket, "items": [(yahoo symbol, company name, optional TradingView exchange)]}]"""
+    """watchlist.txt -> [{"name": basket, "items": [(yahoo candidates, company name, TradingView exchange, display code)]}]"""
     groups, cur = [], None
     with open(path, encoding="utf-8") as fh:
         for line in fh:
@@ -257,12 +310,11 @@ def read_watchlist(path):
             if cur is None:
                 cur = {"name": "Watchlist", "items": []}
                 groups.append(cur)
-            sym, _, rest = line.partition("|")
+            code, _, rest = line.partition("|")
             name, _, exch = rest.partition("|")
-            exch = exch.strip().upper()
-            sym = re.sub(r"\s+(US|UN|UQ|UW|UA)$", "", sym.strip().upper()).replace("/", "-").replace(" ", "")
-            if sym:
-                cur["items"].append((sym, name.strip() or sym, exch))
+            if code.strip():
+                cands, disp = yahoo_candidates(code)
+                cur["items"].append((cands, name.strip() or disp, exch.strip().upper(), disp))
     return groups
 
 
@@ -278,24 +330,27 @@ def build_watchlist(path_in, path_out, spx):
             return None, f"{fn.__name__} {a[0]}: {e}"
 
     with ThreadPoolExecutor(max_workers=8) as ex:
-        jobs = []
+        jobs, cache = [], {}
         for g in groups:
-            for sym, name, exch in g["items"]:
-                feed = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(sym)}&region=US&lang=en-US"
-                jobs.append((g["name"], sym, name, exch, ex.submit(safe2, yahoo, sym), ex.submit(safe2, news, sym, feed, 3)))
+            for cands, name, exch, disp in g["items"]:
+                key = tuple(cands)
+                if key not in cache:   # a stock in two baskets (e.g. Cisco) is fetched once
+                    feed = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(cands[0])}&region=US&lang=en-US"
+                    cache[key] = (ex.submit(safe2, yahoo_any, list(cands)), ex.submit(safe2, news, disp, feed, 3))
+                jobs.append((g["name"], cands, name, exch, disp, cache[key]))
         by = {g["name"]: {"name": g["name"], "rows": []} for g in groups}
-        for gname, sym, name, exch, qf, nf in jobs:
+        for gname, cands, name, exch, disp, (qf, nf) in jobs:
             q, err = qf.result()
-            nw, nerr = nf.result()
+            nw, _ = nf.result()   # missing headlines (common for non-US names) are not an error
             if err:
                 wl["errors"].append(err)
-                by[gname]["rows"].append({"symbol": sym, "label": name, "missing": True, "tv": f"{exch}:{sym}" if exch else sym})
+                by[gname]["rows"].append({"symbol": disp, "label": name, "missing": True, "tv": tv_symbol(cands[0], exch)})
                 continue
+            q = dict(q)
+            q["symbol"] = disp
             q["label"] = name
-            q["tv"] = f"{exch}:{sym}" if exch else sym
+            q["tv"] = tv_symbol(q.get("ysym", cands[0]), exch)
             q["news"] = [{"title": n["title"], "link": n["link"], "time": n["time"]} for n in (nw or [])]
-            if nerr:
-                wl["errors"].append(nerr)
             by[gname]["rows"].append(q)
     wl["groups"] = [by[g["name"]] for g in groups]
     with open(path_out, "w") as f:

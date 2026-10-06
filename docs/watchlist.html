@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Watchlist Dashboard</title>
+<title>Agentic Watchlist Dashboard</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#14181f;--mute:#6a7280;--line:#e3e6eb;--up:#0b8a4b;--dn:#c62828;--acc:#2456d6;--track:#e3e6eb}
 @media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e8ebf0;--mute:#8b93a1;--line:#262c36;--up:#35c27a;--dn:#ef6a6a;--acc:#6e97ff;--track:#2b323d}}
@@ -83,7 +83,7 @@ button.copy{padding:10px 16px;font-size:14px;border-radius:8px;border:0;backgrou
 </head>
 <body>
 <header>
-  <h1>Watchlist Dashboard</h1>
+  <h1>Agentic Watchlist Dashboard</h1>
   <div class="stamp"><a href="./">&larr; Macro dashboard</a> &nbsp;·&nbsp; <span id="stamp">Loading…</span></div>
 </header>
 <div class="banner" id="banner"></div>
@@ -137,7 +137,8 @@ function summary(){
       <div class="row"><span>Avg RSI 14</span><b class="${rsiCls(s.rsi)}">${s.rsi==null?'–':s.rsi.toFixed(0)}</b></div>
       <div class="bar" title="${s.adv} up, ${s.dec} down"><i style="width:${s.adv/tot*100}%;background:var(--up)"></i><i style="width:${s.dec/tot*100}%;background:var(--dn)"></i></div>
       <div class="row"><span>${s.adv} up</span><span>${s.dec} down</span></div></a>`}).join('');
-  const all=D.groups.flatMap(g=>g.rows.filter(r=>!r.missing).map(r=>({...r,basket:g.name}))).filter(r=>r.pct!=null);
+  const seenSym=new Set();
+  const all=D.groups.flatMap(g=>g.rows.filter(r=>!r.missing).map(r=>({...r,basket:g.name}))).filter(r=>r.pct!=null&&!seenSym.has(r.symbol)&&seenSym.add(r.symbol));   // a stock in two baskets counts once
   all.sort((a,b)=>b.pct-a.pct);
   const best=all.slice(0,5), worst=all.slice(-5).reverse();
   const sc=Math.max(1,...best.map(r=>Math.abs(r.pct)),...worst.map(r=>Math.abs(r.pct)));
@@ -196,7 +197,7 @@ function basketHTML(g,i){
   const s=stats(g);
   return `<section id="${slug(g.name)}"><h2>${esc(g.name)} · avg day <span class="${cls(s.day)}">${pc(s.day,2)}</span> · 1M <span class="${cls(s.m1)}">${pc(s.m1)}</span></h2>
     <div class="scroll"><table><tr><th data-b="${i}" data-k="label" class="${st.k==='label'?'on':''}">Stock</th>${th}<th>45d</th></tr>${body}</table></div>
-    <div class="note">Click a column to sort, click a stock to see its latest headlines. Range bar: left = 52-week low, right = 52-week high. RSI 14 (Wilder, as on TradingView): amber zone above 70, blue zone below 30.</div></section>`;
+    <div class="note">Click a column to sort, click a stock to see its latest headlines. Overseas prices are in local currency. Range bar: left = 52-week low, right = 52-week high. RSI 14 (Wilder, as on TradingView): amber zone above 70, blue zone below 30.</div></section>`;
 }
 function briefText(){
   const L=[];const f=(v,x=2)=>v==null?'n/a':v.toFixed(x);
