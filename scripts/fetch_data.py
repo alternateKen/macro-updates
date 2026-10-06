@@ -18,8 +18,13 @@ YAHOO = {
     "Energy": [("CL=F", "WTI crude"), ("BZ=F", "Brent crude"), ("NG=F", "Natural gas"), ("RB=F", "Gasoline")],
     "Metals": [("GC=F", "Gold"), ("SI=F", "Silver"), ("HG=F", "Copper"), ("PL=F", "Platinum")],
     "Agriculture": [("ZC=F", "Corn"), ("ZW=F", "Wheat"), ("ZS=F", "Soybeans")],
+    "Other commodities": [("CC=F", "Cocoa"), ("KC=F", "Coffee"), ("SB=F", "Sugar"), ("CT=F", "Cotton")],
     "FX": [("DX-Y.NYB", "US Dollar Index"), ("EURUSD=X", "EUR/USD"), ("USDJPY=X", "USD/JPY"), ("GBPUSD=X", "GBP/USD"),
-           ("USDCNY=X", "USD/CNY"), ("AUDUSD=X", "AUD/USD")],
+           ("USDCNY=X", "USD/CNY"), ("AUDUSD=X", "AUD/USD"), ("USDCAD=X", "USD/CAD"), ("USDMXN=X", "USD/MXN"), ("USDCHF=X", "USD/CHF")],
+    "Volatility & Credit ETFs": [("^VIX3M", "VIX 3-month"), ("^MOVE", "MOVE (bond vol)"), ("HYG", "High-yield bonds"), ("LQD", "IG corporate bonds"),
+                                 ("TLT", "20y+ Treasuries"), ("IEF", "7-10y Treasuries"), ("SHY", "1-3y Treasuries"), ("EMB", "EM bonds USD")],
+    "Mega-caps & Themes": [("AAPL", "Apple"), ("MSFT", "Microsoft"), ("NVDA", "Nvidia"), ("AMZN", "Amazon"), ("GOOGL", "Alphabet"),
+                           ("META", "Meta"), ("TSLA", "Tesla"), ("RSP", "S&P equal-weight"), ("SMH", "Semiconductors"), ("KRE", "Regional banks")],
     "Crypto": [("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum")],
 }
 
