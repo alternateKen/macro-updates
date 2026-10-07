@@ -12,7 +12,21 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 YAHOO = {
     "Futures": [("ES=F", "S&P 500 fut"), ("NQ=F", "Nasdaq 100 fut"), ("YM=F", "Dow fut"), ("RTY=F", "Russell 2000 fut")],
     "US Indices": [("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq Comp"), ("^DJI", "Dow Jones"), ("^RUT", "Russell 2000"), ("^VIX", "VIX")],
-    "Global Indices": [("^FTSE", "FTSE 100"), ("^STOXX50E", "Euro Stoxx 50"), ("^GDAXI", "DAX"), ("^N225", "Nikkei 225"), ("^HSI", "Hang Seng"), ("000001.SS", "Shanghai Comp")],
+    "Europe Indices": [("^FTSE", "FTSE 100"), ("^STOXX50E", "Euro Stoxx 50"), ("^GDAXI", "DAX"), ("^FCHI", "CAC 40")],
+    # Asia-Pacific: every key starting "Asia: " is shown together on the page, grouped by market.
+    # These have all closed by the 6:15am New York refresh, so the figures are the final session.
+    "Asia: Japan": [("^N225", "Nikkei 225"), ("^TOPX", "TOPIX")],
+    "Asia: Korea": [("^KS11", "KOSPI"), ("^KQ11", "KOSDAQ")],
+    "Asia: Taiwan": [("^TWII", "TAIEX")],
+    "Asia: China H-shares": [("^HSI", "Hang Seng"), ("^HSCE", "HS China Enterprises (H-shares)"), ("^HSTECH", "Hang Seng Tech")],
+    "Asia: China A-shares": [("000001.SS", "Shanghai Composite"), ("399001.SZ", "Shenzhen Component"), ("000300.SS", "CSI 300"), ("399006.SZ", "ChiNext")],
+    "Asia: Singapore": [("^STI", "Straits Times")],
+    "Asia: Southeast Asia": [("^JKSE", "Indonesia (Jakarta Comp)"), ("^KLSE", "Malaysia (KLCI)"), ("^SET.BK", "Thailand (SET)"),
+                             ("^PSEI.PS", "Philippines (PSEi)"), ("VNM", "Vietnam (VanEck ETF)")],
+    "Asia: Australia": [("^AXJO", "ASX 200"), ("^AORD", "All Ordinaries")],
+    "Asia: India": [("^NSEI", "Nifty 50"), ("^BSESN", "Sensex"), ("^NSEBANK", "Nifty Bank")],
+    "Asia FX": [("KRW=X", "USD/KRW"), ("TWD=X", "USD/TWD"), ("CNH=X", "USD/CNH"), ("INR=X", "USD/INR"), ("SGD=X", "USD/SGD"),
+                ("IDR=X", "USD/IDR"), ("THB=X", "USD/THB"), ("MYR=X", "USD/MYR"), ("PHP=X", "USD/PHP")],
     "Sectors (SPDR ETFs)": [("XLK", "Technology"), ("XLC", "Comm Services"), ("XLY", "Cons Discretionary"), ("XLF", "Financials"),
                             ("XLI", "Industrials"), ("XLV", "Health Care"), ("XLP", "Cons Staples"), ("XLE", "Energy"),
                             ("XLB", "Materials"), ("XLU", "Utilities"), ("XLRE", "Real Estate")],

@@ -61,6 +61,8 @@ h3{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05e
 .hl{margin:0;padding:0}
 
 .bu{color:var(--bu)}.am{color:var(--am)}
+tr.grp td{padding:10px 6px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:600;border-top:1px solid var(--line);text-align:left}
+.heat small{font-size:10px}
 .tone.mu{color:var(--am);border-color:var(--am)}
 .tile{border-left-width:4px}
 .tile.up{background:var(--up-bg);border-color:var(--up)}.tile.dn{background:var(--dn-bg);border-color:var(--dn)}
@@ -106,11 +108,32 @@ function quoteTable(title,rows,isRate){
   return `<section id="${slug(title)}"><h2>${title}</h2><table><tr><th></th><th>Last</th><th>${isRate?'Day chg':'Day'}</th>${isRate?'':'<th class="hide-sm">1W</th><th class="hide-sm">1M</th><th class="hide-sm">YTD</th>'}<th>45d</th></tr>${body}</table></section>`;
 }
 const slug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-');
-function heat(rows){
+function heat(rows,id='sectors',title='Sector performance today (SPDR ETFs)'){
   const ordered=[...rows].sort((a,b)=>b.pct-a.pct);
   const col=p=>{const k=Math.min(Math.abs(p)/2,1);return p>=0?`rgba(11,138,75,${0.45+k*0.55})`:`rgba(198,40,40,${0.45+k*0.55})`};
-  return `<section id="sectors"><h2>Sector performance today (SPDR ETFs)</h2><div class="heat">`+
+  return `<section id="${id}"><h2>${title}</h2><div class="heat">`+
     ordered.map(r=>`<div style="background:${col(r.pct)}">${r.label}<b>${pc(r.pct)}</b></div>`).join('')+`</div></section>`;
+}
+// ---- Asia-Pacific: heatmap of the headline index per market, then every index grouped by market
+const ASIA_HEAD=[['^N225','Japan'],['^KS11','Korea'],['^TWII','Taiwan'],['^HSCE','China H-shares'],['000300.SS','China A-shares'],['^STI','Singapore'],
+  ['^JKSE','Indonesia'],['^KLSE','Malaysia'],['^SET.BK','Thailand'],['^PSEI.PS','Philippines'],['VNM','Vietnam (ETF)'],['^AXJO','Australia'],['^NSEI','India']];
+function asiaGroups(S){return Object.keys(S).filter(k=>k.startsWith('Asia: ')).map(k=>[k.slice(6),S[k]])}
+function asiaHeadRows(S){
+  const all=asiaGroups(S).flatMap(([,rows])=>rows);
+  return ASIA_HEAD.map(([sym,name])=>{const r=all.find(x=>x.symbol===sym);return r&&r.pct!=null?{...r,label:`${name}<small style="display:block;font-weight:400;opacity:.85">${r.label}</small>`}:null}).filter(Boolean);
+}
+function asiaBlock(S){
+  const groups=asiaGroups(S);
+  if(!groups.length)return '';
+  const hr=asiaHeadRows(S);
+  const up=hr.filter(r=>r.pct>0).length;
+  const heatH=hr.length?heat(hr,'asia-heat',`Asia-Pacific today (final session) · ${up} of ${hr.length} markets higher`):'';
+  const rowsH=groups.map(([name,rows])=>`<tr class="grp"><td colspan="7">${name}</td></tr>`+rows.map(r=>`<tr><td class="name">${r.label}</td><td>${fmt(r.last,digits(r))}</td>
+      <td class="${cls(r.pct)}">${pc(r.pct)}</td><td class="${cls(r.w1)} hide-sm">${pc(r.w1)}</td><td class="${cls(r.m1)} hide-sm">${pc(r.m1)}</td><td class="${cls(r.ytd)} hide-sm">${pc(r.ytd)}</td>
+      <td class="${cls(r.pct)}">${spark(r.spark)}</td></tr>`).join('')).join('');
+  const table=`<section id="asia-pacific-indices" class="wide"><h2>Asia-Pacific indices</h2><table><tr><th></th><th>Last</th><th>Day</th><th class="hide-sm">1W</th><th class="hide-sm">1M</th><th class="hide-sm">YTD</th><th>45d</th></tr>${rowsH}</table>
+    <div class="note">Day = the latest completed session in each market (all closed before the New York morning). Vietnam is shown through a US-listed ETF because Yahoo carries no free VN-Index feed.</div></section>`;
+  return heatH.replace('<section id="asia-heat">','<section id="asia-heat" class="wide">')+table+quoteTable('Asia FX',S['Asia FX']);
 }
 function curveChart(c){
   if(!c.length)return '';
@@ -177,7 +200,7 @@ function jgbBlock(rows){
 // Higher is BAD for these (so a fall shows green):
 const HIGHER_BAD=new Set(['^VIX','^VIX3M','^MOVE','DX-Y.NYB','^TNX','^FVX','^TYX','^IRX']);
 // No one-way market read: oil, gas, gold, other metals, grains, softs, FX pairs -> blue (up) / amber (down)
-const NO_READ=new Set(['CL=F','BZ=F','NG=F','RB=F','GC=F','SI=F','PL=F','ZC=F','ZW=F','ZS=F','CC=F','KC=F','SB=F','CT=F','USDJPY=X','EURUSD=X','GBPUSD=X','USDCNY=X','AUDUSD=X','USDCAD=X','USDMXN=X','USDCHF=X']);
+const NO_READ=new Set(['CL=F','BZ=F','NG=F','RB=F','GC=F','SI=F','PL=F','ZC=F','ZW=F','ZS=F','CC=F','KC=F','SB=F','CT=F','USDJPY=X','EURUSD=X','GBPUSD=X','USDCNY=X','AUDUSD=X','USDCAD=X','USDMXN=X','USDCHF=X','KRW=X','TWD=X','CNH=X','INR=X','SGD=X','IDR=X','THB=X','MYR=X','PHP=X']);
 const dcl=v=>v==null||v===0?'flat':v>0?'bu':'am';                       // direction-only colour
 const cm=(sym,v)=>v==null||v===0?'flat':NO_READ.has(sym)?dcl(v):((HIGHER_BAD.has(sym)?-v:v)>0?'up':'dn');
 const col=(txt,c)=>`<span class="${c}">${txt}</span>`;
@@ -211,6 +234,14 @@ function snapshot(d){
   const eqm=[es,nq].filter(r=>r&&r.pct!=null&&Math.abs(r.pct)>=0.5);
   if(eqm.length){const av=eqm.reduce((p,r)=>p+r.pct,0)/eqm.length;
     F.push([`<b>Equities:</b> ${eqm.map(r=>col(`${r.label} ${pc(r.pct)}`,cm(r.symbol,r.pct))).join(', ')}`,cm('ES=F',av)])}
+  // Asia-Pacific: how many of the headline markets closed higher, plus leaders and laggards
+  const ah=asiaHeadRows(d.sections);
+  if(ah.length>=4){
+    const plain=r=>r.label.replace(/<small.*$/,'');
+    const srt=ah.slice().sort((a,b)=>b.pct-a.pct), up=ah.filter(r=>r.pct>0).length, av=ah.reduce((p,r)=>p+r.pct,0)/ah.length;
+    const k=av>0.15?'up':av<-0.15?'dn':dcl(av);
+    F.push([`<b>Asia-Pacific:</b> ${col(`${up} of ${ah.length} markets higher (avg ${pc(av)})`,k)} · leaders ${srt.slice(0,2).map(r=>`${plain(r)} ${pc(r.pct)}`).join(', ')} · laggards ${srt.slice(-2).reverse().map(r=>`${plain(r)} ${pc(r.pct)}`).join(', ')}`,k]);
+  }
   const vix=q('^VIX');
   if(vix){const v=vix.last,rg=v<15?['calm','up']:v<20?['normal','flat']:v<25?['elevated','dn']:['high stress','dn'];
     F.push([`<b>Volatility:</b> VIX ${fmt(v,1)} ${col(pc(vix.pct),cm('^VIX',vix.pct))} – ${col(rg[0],rg[1])}${vix.pct!=null&&Math.abs(vix.pct)>=5?', sharp move':''}`,
@@ -268,11 +299,11 @@ function render(d){
     S['Sectors (SPDR ETFs)']?heat(S['Sectors (SPDR ETFs)']):'',
     ratesBlock(d),quoteTable('Rates (Yahoo, intraday)',S['Rates (Yahoo, intraday)'],true),jgbBlock(d.jgb),
     quoteTable('Volatility & Credit ETFs',S['Volatility & Credit ETFs']),quoteTable('Mega-caps & Themes',S['Mega-caps & Themes']),quoteTable('Energy',S['Energy']),quoteTable('Metals',S['Metals']),quoteTable('Agriculture',S['Agriculture']),quoteTable('Other commodities',S['Other commodities']),
-    quoteTable('FX',S['FX']),quoteTable('Crypto',S['Crypto']),quoteTable('Global Indices',S['Global Indices']),
+    quoteTable('FX',S['FX']),quoteTable('Crypto',S['Crypto']),quoteTable('Europe Indices',S['Europe Indices']),asiaBlock(S),
     claudeBlock(),newsBlock(d.news),calendar,notes
   ].join('');
   document.getElementById('main').innerHTML=parts;
-  const ids=[['snapshot','Snapshot'],['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['jgb','JGB'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['global-indices','Global'],['claude-brief','Claude'],['news','News'],['calendar','Calendar'],['notes','Notes']];
+  const ids=[['snapshot','Snapshot'],['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['jgb','JGB'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['asia-heat','Asia'],['europe-indices','Europe'],['claude-brief','Claude'],['news','News'],['calendar','Calendar'],['notes','Notes']];
   document.getElementById('nav').innerHTML=ids.filter(([i])=>document.getElementById(i)).map(([i,l])=>`<a href="#${i}">${l}</a>`).join('');
   const n=document.getElementById('note');
   try{n.value=localStorage.getItem('macro-note-'+new Date().toDateString())||'';n.addEventListener('input',()=>localStorage.setItem('macro-note-'+new Date().toDateString(),n.value))}catch(e){}
