@@ -1,0 +1,17 @@
+# source: Bloomberg WIRP, region United States, instrument Fed Funds Futures
+# asof: 2026-10-07
+# target: 4.00
+# effective: 3.88
+# note: cum = cumulative hikes (+) or cuts (-) priced from today; pct = % chance of a hike (+) or cut (-) at that meeting
+meeting,cum,pct,imp_change,implied_rate
+2026-10-28,0.194,19.4,0.048,3.927
+2026-12-09,0.989,79.5,0.247,4.126
+2027-01-27,1.394,40.5,0.348,4.227
+2027-03-17,2.053,65.9,0.513,4.392
+2027-04-28,2.434,38.1,0.608,4.488
+2027-06-09,2.836,40.2,0.709,4.588
+2027-07-28,3.004,16.8,0.751,4.630
+2027-09-15,3.176,17.2,0.794,4.673
+2027-10-27,3.214,3.8,0.803,4.682
+2027-12-08,3.190,-2.3,0.798,4.677
+2028-01-26,3.184,-0.7,0.796,4.675

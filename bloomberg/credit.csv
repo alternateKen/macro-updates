@@ -1,0 +1,17 @@
+# source: Bloomberg Markit credit indices screen (spread, 3 months of history)
+# asof: 2026-10-07
+# note: quote = spread (bp) or price. For price-quoted indices (marked * on the screen) a FALLING price means spreads WIDENED.
+group,index,level,chg,basis,roll,low,high,avg,vs_avg,chg_3m,quote
+Americas,CDX Investment Grade,58.84,1.06,-3.2,7.0,50.1,60.7,52.8,6.0,8.8,spread
+Americas,CDX High Yield,106.67,-0.30,0.4,0.1,106.4,108.3,107.7,-1.0,-1.7,price
+Americas,CDX Financials,97.30,0.37,,,,,,,,spread
+EMEA,iTraxx Europe,63.86,2.19,-1.2,7.4,50.6,66.0,54.3,9.6,13.3,spread
+EMEA,iTraxx Crossover,307.29,10.44,-4.8,36.6,240.3,315.6,262.0,45.2,67.0,spread
+EMEA,iTraxx Sr Financial,71.90,3.03,1.1,7.4,53.2,73.3,57.3,14.6,18.7,spread
+EMEA,iTraxx Sub Financial,119.67,5.66,1.8,13.8,86.2,121.9,93.4,26.3,32.3,spread
+Asia,iTraxx Japan,65.40,-0.24,1.0,8.1,54.9,65.6,59.8,5.6,4.4,spread
+Asia,iTraxx Asia Ex Japan IG,70.81,-0.09,3.8,8.4,64.8,73.1,68.9,1.9,2.2,spread
+Asia,iTraxx Australia,73.49,-0.22,-4.9,8.0,66.3,75.2,70.2,3.3,5.1,spread
+Emerging Markets,CDX Emerging Market,97.37,-0.13,-0.1,-0.5,97.1,98.7,98.2,-0.8,-0.9,price
+Emerging Markets,CDX Emerging Market IG,101.26,-0.05,0.0,-0.1,101.2,101.7,101.5,-0.2,-0.3,price
+Emerging Markets,CDX Emerging Market HY,94.25,-0.22,-0.1,-0.9,93.8,96.1,95.5,-1.3,-1.4,price

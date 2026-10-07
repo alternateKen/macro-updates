@@ -1,0 +1,18 @@
+# source: Bloomberg WIRP, model list (Hide Models panel)
+# asof: 2026-10-07
+# note: pct = % chance of a hike (+) or cut (-) at that central bank's next meeting; above 100 means more than one move priced
+region,model,meeting,pct
+North America,US - Fut,2026-10-28,19.4
+North America,US - OIS,2026-10-28,19.7
+North America,CA - OIS,2026-10-28,33.5
+Europe,EZ - OIS,2026-10-29,12.1
+Europe,GB - OIS,2026-11-05,85.1
+Europe,SE - OIS,2026-11-04,71.9
+Europe,CH - OIS,2026-12-10,15.4
+Europe,NO - OIS,2026-11-05,14.2
+APAC,AU - Fut,2026-11-03,37.4
+APAC,AU - OIS,2026-11-03,26.4
+APAC,NZ - OIS,2026-10-28,44.1
+APAC,JP - OIS,2026-10-30,11.2
+APAC,IN - OIS,2026-12-04,127.4
+LATAM,CL - OIS,2026-10-27,11.9

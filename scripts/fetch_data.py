@@ -591,8 +591,68 @@ def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketca
     return out
 
 
+# ---------------- Bloomberg screens typed in by hand (bloomberg/*.csv): rate pricing, credit spreads, economic calendar ----------------
+def _csv_with_meta(path):
+    """CSV whose leading '# key: value' lines are metadata (asof, target, timezone, ...) -> (meta dict, list of row dicts)."""
+    meta, body = {}, []
+    with open(path, encoding="utf-8-sig") as fh:
+        for line in fh:
+            if line.startswith("#"):
+                k, _, v = line[1:].partition(":")
+                meta[k.strip().lower()] = v.strip()
+            elif line.strip():
+                body.append(line)
+    return meta, list(csv.DictReader(io.StringIO("".join(body))))
+
+
+def _num(x):
+    try:
+        return float(str(x).replace("%", "").replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def read_bloomberg(folder):
+    out, errs = {}, []
+
+    def load(name):
+        path = os.path.join(folder, name)
+        if not os.path.exists(path):
+            return None, []
+        try:
+            return _csv_with_meta(path)
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"bloomberg/{name}: {e}")
+            return None, []
+
+    meta, rows = load("wirp_us.csv")
+    if rows:
+        out["wirp"] = {"asof": meta.get("asof"), "target": _num(meta.get("target")), "effective": _num(meta.get("effective")),
+                       "meetings": [{"date": r["meeting"], "cum": _num(r["cum"]), "pct": _num(r["pct"]), "chg": _num(r["imp_change"]), "rate": _num(r["implied_rate"])} for r in rows]}
+    meta, rows = load("wirp_global.csv")
+    if rows:
+        out["wirp_global"] = {"asof": meta.get("asof"), "rows": [{"region": r["region"], "model": r["model"], "date": r["meeting"], "pct": _num(r["pct"])} for r in rows]}
+    meta, rows = load("credit.csv")
+    if rows:
+        keys = ("level", "chg", "basis", "roll", "low", "high", "avg", "vs_avg", "chg_3m")
+        out["credit"] = {"asof": meta.get("asof"), "rows": [{"group": r["group"], "index": r["index"], "quote": r.get("quote") or "spread", **{k: _num(r.get(k)) for k in keys}} for r in rows]}
+    meta, rows = load("eco.csv")
+    if rows:
+        tz = meta.get("timezone", "+00:00")
+        ev = []
+        for r in rows:
+            try:
+                dt = datetime.strptime(r["datetime"].strip(), "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+            ev.append({"time": dt.strftime("%Y-%m-%dT%H:%M:00") + tz, "event": r["event"], "period": r.get("period", ""),
+                       "survey": r.get("survey", ""), "actual": r.get("actual", ""), "prior": r.get("prior", ""), "revised": r.get("revised", "")})
+        out["eco"] = {"asof": meta.get("asof"), "events": ev}
+    return out, errs
+
+
 def main():
-    out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "jgb": [], "movers": {}, "news": [], "errors": []}
+    out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "jgb": [], "movers": {}, "bbg": {}, "news": [], "errors": []}
 
     def safe(fn, *a):
         try:
@@ -673,6 +733,11 @@ def main():
             out["movers"] = build_movers(mv, out["errors"])
     except Exception as e:  # noqa: BLE001
         out["errors"].append(f"movers: {e}")
+    try:
+        out["bbg"], bbg_errs = read_bloomberg(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bloomberg"))
+        out["errors"].extend(bbg_errs)
+    except Exception as e:  # noqa: BLE001
+        out["errors"].append(f"bloomberg: {e}")
     total = sum(len(v) for v in out["sections"].values())
     if total == 0 and not out["curve"]:
         print("No data fetched at all; keeping previous data.json", file=sys.stderr)
