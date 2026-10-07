@@ -70,7 +70,11 @@ h3{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05e
 .mvn small{display:block;color:var(--mute);font-size:10px}
 .mvbar{position:relative;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
 .mvbar i{position:absolute;left:0;top:0;bottom:0;border-radius:0 4px 4px 0}.mvbar i.up{background:var(--up)}.mvbar i.dn{background:var(--dn)}
-.mvp{text-align:right;font-size:12px;font-weight:600}
+.mvp{text-align:right;font-size:12px;font-weight:600;white-space:nowrap}
+.mvp small{display:block;font-size:10px;font-weight:400;color:var(--mute)}
+.mvr{grid-template-columns:minmax(80px,1.1fr) 1fr 92px}
+.mvm{font-size:11px;color:var(--mute);margin:2px 0 3px}.mvm.approx{color:var(--am)}
+.mvl{font-size:12px;margin:2px 0 4px}
 tr.grp td{padding:10px 6px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:600;border-top:1px solid var(--line);text-align:left}
 .heat small{font-size:10px}
 .tone.mu{color:var(--am);border-color:var(--am)}
@@ -194,9 +198,10 @@ function briefText(d){
   L.push('','## Japan JGB yields % (now | 1-day change | 1W ago | 1M ago), MOF end-of-day');
   (d.jgb||[]).forEach(r=>L.push(`${r.label}: ${f(r.now,3)} | ${f(r.d1,3)} | ${f(r.w1,3)} | ${f(r.m1,3)}`));
   Object.entries(d.movers||{}).forEach(([name,m])=>{
-    L.push('',`## Top movers: ${name} (${m.adv} up / ${m.dec} down of ${m.loaded}; day % change, last completed session)`);
-    L.push('Gainers: '+m.gainers.map(r=>`${r.label} (${r.symbol}) ${f(r.pct,2)}%`).join('; '));
-    L.push('Losers: '+m.losers.map(r=>`${r.label} (${r.symbol}) ${f(r.pct,2)}%`).join('; '));
+    const u=m.unit,fv=r=>u==='bp'?f(r.c,1)+' bp':u==='pts'?f(r.c,1)+' pts':f(r.c,2)+'%';
+    L.push('',`## Top movers: ${name} (${m.method}; ranked by contribution to the index move; ${m.adv} up / ${m.dec} down of ${m.loaded}${m.index?`; index ${f(m.index.pct,2)}%`:''})`);
+    L.push('Positive: '+m.gainers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
+    L.push('Negative: '+m.losers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
   });
   L.push('','## Headlines');
   d.news.forEach(n=>L.push(`- [${n.source}] ${n.title}`));
@@ -219,22 +224,36 @@ const NO_READ=new Set(['CL=F','BZ=F','NG=F','RB=F','GC=F','SI=F','PL=F','ZC=F','
 const dcl=v=>v==null||v===0?'flat':v>0?'bu':'am';                       // direction-only colour
 const cm=(sym,v)=>v==null||v===0?'flat':NO_READ.has(sym)?dcl(v):((HIGHER_BAD.has(sym)?-v:v)>0?'up':'dn');
 const col=(txt,c)=>`<span class="${c}">${txt}</span>`;
-// Top movers: five biggest gainers and losers for each stock universe in movers.txt
+// Top movers: stocks ranked by CONTRIBUTION to the index move (weight x move), five up and five down per universe
 function moversBlock(d){
   const M=d.movers;
   if(!M||!Object.keys(M).length)return '';
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const arrow=v=>v>0?'▲ ':v<0?'▼ ':'';
+  const sg=(v,dg)=>(v>0?'+':'')+v.toFixed(dg);
+  const cval=(r,u)=>u==='bp'?sg(r.c,1)+' bp':u==='pts'?sg(r.c,1)+' pts':sg(r.c,2)+'%';
   const card=(name,m)=>{
-    const rows=[...m.gainers,...m.losers];
-    const sc=Math.max(1,...rows.map(r=>Math.abs(r.pct)));
-    const row=r=>{const k=r.pct>0?'up':r.pct<0?'dn':'';const w=Math.max(2,Math.min(100,Math.abs(r.pct)/sc*100));
-      return `<div class="mvr"><div class="mvn"><b>${esc(r.label)}</b><small>${esc(r.symbol)}</small></div><div class="mvbar"><i class="${k}" style="width:${w}%"></i></div><div class="mvp ${k}">${arrow(r.pct)}${pc(r.pct)}</div></div>`};
-    const arrow=v=>v>0?'▲ ':v<0?'▼ ':'';
+    const u=m.unit, rows=[...m.gainers,...m.losers];
+    const sc=Math.max(1e-9,...rows.map(r=>Math.abs(r.c)));
+    const row=r=>{const k=r.c>0?'up':r.c<0?'dn':'';const w=Math.max(3,Math.min(100,Math.abs(r.c)/sc*100));
+      const sub=`${sg(r.pct,2)}%${r.w!=null?` · ${r.w.toFixed(r.w<1?2:1)}% wt`:''}`;
+      return `<div class="mvr"><div class="mvn"><b>${esc(r.label)}</b><small>${esc(r.symbol)}</small></div><div class="mvbar"><i class="${k}" style="width:${w}%"></i></div><div class="mvp ${k}">${arrow(r.c)}${cval(r,u)}<small>${sub}</small></div></div>`};
+    let line='';
+    if(m.index){const ip=m.index.pct;
+      if(u==='bp'&&m.explained!=null)line=`Index <b class="${ip>0?'up':ip<0?'dn':''}">${sg(ip,2)}%</b> (${sg(ip*100,0)} bp) · these names explain ${sg(m.explained,0)} bp${m.covered!=null?` · cover ${m.covered.toFixed(0)}% of the index`:''}`;
+      else if(u==='pts'&&m.explained!=null){const ipts=m.index.last-m.index.last/(1+ip/100);line=`Index <b class="${ip>0?'up':ip<0?'dn':''}">${sg(ip,2)}%</b> (${sg(ipts,0)} pts) · members add up to ${sg(m.explained,0)} pts`}
+      else line=`Index <b class="${ip>0?'up':ip<0?'dn':''}">${sg(ip,2)}%</b>`;
+    }
+    if(m.ret!=null)line+=`${line?' · ':''}this list, cap-weighted: <b class="${m.ret>0?'up':m.ret<0?'dn':''}">${sg(m.ret,2)}%</b>`;
+    const approx=m.method.startsWith('Bloomberg')||m.method.startsWith('Price')?'':'approx';
     return `<div class="mvcard"><div class="mvh"><b>${esc(name)}</b><span>${m.adv} up · ${m.dec} down${m.loaded<m.n?` · ${m.loaded}/${m.n} loaded`:''}</span></div>
-      <div class="sub">Top gainers</div>${m.gainers.map(row).join('')}<div class="sub">Top losers</div>${m.losers.map(row).join('')}</div>`;
+      <div class="mvm ${approx}">${esc(m.method)}${m.basis==='list'?' · curated list, not the whole index':''}</div>
+      ${line?`<div class="mvl">${line}</div>`:''}
+      <div class="sub">Biggest positive contributors</div>${m.gainers.length?m.gainers.map(row).join(''):'<div class="empty">none</div>'}
+      <div class="sub">Biggest negative contributors</div>${m.losers.length?m.losers.map(row).join(''):'<div class="empty">none</div>'}</div>`;
   };
-  return `<h3>Top movers (last completed session)</h3><div class="mvgrid">${Object.entries(M).map(([n,m])=>card(n,m)).join('')}</div>
-    <div class="note">US lists are the live index members; Asian lists are curated large caps from movers.txt. US figures from the pre-market run are yesterday's session; Asian figures are the latest close.</div>`;
+  return `<h3>Top movers by impact on the index (last completed session)</h3><div class="mvgrid">${Object.entries(M).map(([n,m])=>card(n,m)).join('')}</div>
+    <div class="note">Ranked by contribution to the index move = weight in the index × day move (bp of the index; index points for the price-weighted Dow). "Approx" cards use Yahoo market caps; drop Bloomberg index weights into the weights/ folder to make them exact. US figures from the pre-market run are yesterday's session; Asian figures are the latest close.</div>`;
 }
 function snapshot(d){
   const all=Object.values(d.sections).flat();

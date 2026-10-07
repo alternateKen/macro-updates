@@ -26,7 +26,11 @@ To add a ticker, edit the `YAHOO` list at the top of `fetch_data.py`.
 
 GitHub can start a scheduled run a few minutes late. You can also press **Run workflow** on the Actions tab at any time.
 
-## Top movers
-The morning snapshot shows the five biggest gainers and losers for the Dow 30, S&P 500 and Nasdaq-100 (members read live from Wikipedia)
-and for China H-shares, China A-shares, Taiwan and Korea (curated large caps in `movers.txt`).
+## Top movers (ranked by impact on the index)
+The morning snapshot ranks stocks by their **contribution to the index move** (weight in the index x day move), for the Dow 30, S&P 500,
+Nasdaq-100 (members read live from Wikipedia) and China H-shares, China A-shares, Taiwan and Korea (curated large caps in `movers.txt`).
+- Dow is price-weighted: contribution is in index points (price change / the Dow divisor, derived live).
+- Everything else uses weights from Bloomberg files in the `weights/` folder when present (exact), otherwise Yahoo market caps (approximate;
+  the card is marked "approx", and Asian lists are only a basket of large caps, not the whole index).
+- How to export the Bloomberg weights: see `weights/README.txt`.
 To change the Asian lists, open `movers.txt` on GitHub, click the pencil, edit and save. Bloomberg style codes work (`0700 HK`, `600519 CH`, `2330 TT`, `005930 KS`).
