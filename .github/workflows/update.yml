@@ -2,15 +2,19 @@ name: Update macro dashboard
 
 on:
   schedule:
-    # GitHub cron is UTC only and ignores daylight saving, so each time is listed twice
-    # (summer + winter) and the "gate" job below keeps only the one that is really
-    # ~6:15am or ~4:45pm New York time. Early start leaves room for GitHub's queue delay.
+    # Three runs a day on weekdays. GitHub cron is UTC only and ignores daylight saving, so the two US
+    # times are listed twice (summer + winter) and the "gate" job below keeps only the one that is
+    # really ~6:15am or ~4:45pm New York time.
+    #   1) pre-market, ~6:15am New York      10:15 UTC in US summer time, 11:15 UTC in US winter time
+    #   2) after the US close, ~4:45pm NY    20:45 UTC in US summer time, 21:45 UTC in US winter time
+    #   3) after the Asian close, 10:30 UTC  (India closes last, 10:00 UTC; Asia has no daylight saving)
     - cron: "15 10,11 * * 1-5"
     - cron: "45 20,21 * * 1-5"
+    - cron: "30 10 * * 1-5"
   workflow_dispatch: {}   # lets you press "Run workflow" for an on-demand refresh
   push:
     branches: [main]
-    paths: ["docs/**", "scripts/**", ".github/workflows/update.yml"]
+    paths: ["docs/**", "scripts/**", "movers.txt", ".github/workflows/update.yml"]
 
 permissions:
   contents: read
@@ -28,10 +32,13 @@ jobs:
       go: ${{ steps.g.outputs.go }}
     steps:
       - id: g
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
         run: |
           H=$(TZ=America/New_York date +%-H)
-          echo "New York hour is $H, event is ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" != "schedule" ] || [ "$H" = "6" ] || [ "$H" = "16" ]; then
+          echo "New York hour is $H, event is $EVENT, schedule is '$SCHED'"
+          if [ "$EVENT" != "schedule" ] || [ "$SCHED" = "30 10 * * 1-5" ] || [ "$H" = "6" ] || [ "$H" = "16" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
           else
             echo "go=false" >> "$GITHUB_OUTPUT"
@@ -40,14 +47,14 @@ jobs:
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 14
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Fetch fresh market data
-        timeout-minutes: 4
+        timeout-minutes: 9
         run: python scripts/fetch_data.py docs/data.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
