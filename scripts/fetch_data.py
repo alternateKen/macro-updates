@@ -275,95 +275,146 @@ def yahoo_candidates(code):
     base, cc = m.group(1).replace(" ", "").replace("/", "-"), m.group(2)
     if cc in US_SUFFIX:
         return [base]
-    if cc == "CH":   # mainland China: 6xxxxx = Shanghai, otherwise Shenzhen
+    if cc in ("CH", "C1", "C2"):   # mainland China: 6xxxxx = Shanghai, otherwise Shenzhen
         return [base + (".SS" if base.startswith("6") else ".SZ")]
     if cc == "HK":
         base = base.lstrip("0").zfill(4)
     return [base + x for x in BBG_SUFFIX.get(cc, [""])]
 
 
-class TableById(HTMLParser):
-    """Collects the rows of one HTML table, found by its id (Wikipedia member tables use id="constituents")."""
-    def __init__(self, tid):
+class TableCollector(HTMLParser):
+    """Collects every HTML table on a page as a list of rows (nested tables handled). Wikipedia's member
+    tables have no reliable id, so the right one is picked afterwards by looking at its header and size."""
+    def __init__(self):
         super().__init__()
-        self.tid, self.depth, self.on, self.rows, self.row, self.cell = tid, 0, False, [], None, None
+        self.stack, self.tables = [], []
 
     def handle_starttag(self, tag, attrs):
-        a = dict(attrs)
         if tag == "table":
-            if self.on:
-                self.depth += 1
-            elif a.get("id") == self.tid:
-                self.on, self.depth = True, 1
-        elif self.on and tag == "tr":
-            self.row = []
-        elif self.on and tag in ("td", "th") and self.row is not None:
-            self.cell = []
-        elif self.on and tag == "br" and self.cell is not None:
-            self.cell.append(" ")
+            self.stack.append({"rows": [], "row": None, "cell": None})
+        elif self.stack:
+            t = self.stack[-1]
+            if tag == "tr":
+                t["row"] = []
+            elif tag in ("td", "th") and t["row"] is not None:
+                t["cell"] = []
+            elif tag == "br" and t["cell"] is not None:
+                t["cell"].append(" ")
 
     def handle_endtag(self, tag):
-        if not self.on:
+        if not self.stack:
             return
+        t = self.stack[-1]
         if tag == "table":
-            self.depth -= 1
-            if self.depth == 0:
-                self.on = False
-        elif tag in ("td", "th") and self.cell is not None and self.row is not None:
-            self.row.append(" ".join("".join(self.cell).split()))
-            self.cell = None
-        elif tag == "tr" and self.row is not None:
-            if self.row:
-                self.rows.append(self.row)
-            self.row = None
+            self.tables.append(self.stack.pop()["rows"])
+        elif tag in ("td", "th") and t["cell"] is not None and t["row"] is not None:
+            t["row"].append(" ".join("".join(t["cell"]).split()))
+            t["cell"] = None
+        elif tag == "tr" and t["row"] is not None:
+            if t["row"]:
+                t["rows"].append(t["row"])
+            t["row"] = None
 
     def handle_data(self, d):
-        if self.on and self.cell is not None:
-            self.cell.append(d)
+        if self.stack and self.stack[-1]["cell"] is not None:
+            self.stack[-1]["cell"].append(d)
 
 
-def wikipedia_members(url):
-    """-> [(yahoo symbol, company name)] from the 'constituents' table of a Wikipedia index page."""
-    p = TableById("constituents")
+def _clean(x):
+    return re.sub(r"\[.*?\]", "", x).strip()
+
+
+def wikipedia_members(url, min_rows=20):
+    """-> [(yahoo symbol, company name)]: the largest table on the page that has a Symbol / Ticker column."""
+    p = TableCollector()
     p.feed(get(url, tries=2, timeout=25).decode("utf-8", "ignore"))
-    if len(p.rows) < 5:
-        raise ValueError("members table not found on page")
-    head = [re.sub(r"\[.*?\]", "", h).strip().lower() for h in p.rows[0]]
-    si = next((i for i, h in enumerate(head) if h in ("symbol", "ticker")), None)
-    ni = next((i for i, h in enumerate(head) if h in ("security", "company", "name")), None)
-    if si is None:
-        raise ValueError("no Symbol column in members table")
-    out = []
-    for r in p.rows[1:]:
-        if len(r) <= si:
+    best = []
+    for rows in p.tables:
+        hi = next((i for i, r in enumerate(rows[:4]) if any(_clean(c).lower() in ("symbol", "ticker", "ticker symbol") for c in r)), None)
+        if hi is None:
             continue
-        sym = re.sub(r"\[.*?\]", "", r[si]).split(":")[-1].strip().upper().replace(".", "-")
-        if re.match(r"^[A-Z][A-Z0-9-]{0,6}$", sym):
-            out.append((sym, re.sub(r"\[.*?\]", "", r[ni]).strip() if ni is not None and len(r) > ni else sym))
-    return out
+        head = [_clean(c).lower() for c in rows[hi]]
+        si = next(i for i, h in enumerate(head) if h in ("symbol", "ticker", "ticker symbol"))
+        ni = next((i for i, h in enumerate(head) if h in ("security", "company", "company name", "name")), None)
+        seen, members = set(), []
+        for r in rows[hi + 1:]:
+            if len(r) <= si:
+                continue
+            sym = _clean(r[si]).split(":")[-1].strip().upper().replace(".", "-")
+            if re.match(r"^[A-Z][A-Z0-9-]{0,6}$", sym) and sym not in seen:
+                seen.add(sym)
+                members.append((sym, _clean(r[ni]) if ni is not None and len(r) > ni else sym))
+        if len(members) > len(best):
+            best = members
+    if len(best) < min_rows:
+        raise ValueError(f"members table not found on page (best candidate had {len(best)} rows)")
+    return best
 
 
 def read_movers(path):
-    """movers.txt -> [{"name": universe, "wiki": url or None, "items": [(candidates, name, display)]}]"""
+    """movers.txt -> [{"name", "wiki", "index", "weights", "weighting", "items": [(candidates, name, display)]}]"""
     unis, cur = [], None
     with open(path, encoding="utf-8") as fh:
         for line in fh:
-            line = line.split("#")[0].strip() if not line.strip().startswith("@") else line.strip()
+            line = line.strip() if line.strip().startswith("@") else line.split("#")[0].strip()
             if not line:
                 continue
             if line.startswith("[") and line.endswith("]"):
-                cur = {"name": line[1:-1].strip(), "wiki": None, "items": []}
+                cur = {"name": line[1:-1].strip(), "wiki": None, "index": None, "weights": None, "weighting": "cap", "items": []}
                 unis.append(cur)
             elif cur is None:
                 continue
-            elif line.lower().startswith("@wikipedia"):
-                cur["wiki"] = line.split(None, 1)[1].strip()
+            elif line.startswith("@"):
+                key, _, val = line[1:].partition(" ")
+                key, val = key.lower(), val.strip()
+                if key == "wikipedia":
+                    cur["wiki"] = val
+                elif key == "index":
+                    cur["index"] = val
+                elif key == "weights":
+                    cur["weights"] = val
+                elif key == "weighting":
+                    cur["weighting"] = val.lower()
             else:
                 code, _, name = line.partition("|")
                 if code.strip():
-                    cands = yahoo_candidates(code)
-                    cur["items"].append((cands, name.strip() or code.strip(), code.strip().upper().replace(" US", "")))
+                    cur["items"].append((yahoo_candidates(code), name.strip() or code.strip(), code.strip().upper().replace(" US", "")))
     return unis
+
+
+def read_weights(path):
+    """Bloomberg MEMB export (csv / tab / semicolon text) -> [(code, name, display, weight %)].
+    Needs a ticker column and a weight column; headers like 'Ticker', 'Name', 'Index Weight', '% Wgt' are recognised."""
+    raw = open(path, encoding="utf-8-sig", errors="ignore").read()
+    delim = "\t" if raw.count("\t") > raw.count(",") else (";" if raw.count(";") > raw.count(",") else ",")
+    rows = [r for r in csv.reader(io.StringIO(raw), delimiter=delim) if any(c.strip() for c in r)]
+    hi = next((i for i, r in enumerate(rows[:10]) if any(re.search(r"weight|wgt", c, re.I) for c in r)), None)
+    tcol, ncol, wcol = 0, None, None
+    if hi is not None:
+        for j, c in enumerate(rows[hi]):
+            if wcol is None and re.search(r"weight|wgt", c, re.I):
+                wcol = j
+            elif ncol is None and re.search(r"^name$|security name|company", c, re.I):
+                ncol = j
+            elif re.search(r"ticker|member|security$", c, re.I) and tcol == 0:
+                tcol = j
+    out = []
+    for r in rows[(hi + 1) if hi is not None else 0:]:
+        if len(r) <= tcol:
+            continue
+        code = re.sub(r"\s+(EQUITY|INDEX)$", "", r[tcol].strip(), flags=re.I)
+        wv = None
+        for j in ([wcol] if wcol is not None else range(len(r) - 1, 0, -1)):
+            if j is not None and j < len(r):
+                try:
+                    wv = float(r[j].replace("%", "").replace(",", "").strip())
+                    break
+                except ValueError:
+                    continue
+        if code and wv is not None and wv > 0:
+            name = r[ncol].strip() if ncol is not None and len(r) > ncol and r[ncol].strip() else code
+            out.append((code, name, code.upper().replace(" US", ""), wv))
+    return out
 
 
 def quick_quote(cands, deadline):
@@ -385,11 +436,105 @@ def quick_quote(cands, deadline):
     raise last_err
 
 
-def build_movers(path, errors, budget_seconds=240, top=5):
+def yahoo_marketcaps(symbols, deadline):
+    """{yahoo symbol: market cap in local currency} from Yahoo's quote endpoint (needs a cookie + crumb)."""
+    import http.cookiejar
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    op.addheaders = list(UA.items())
+    try:
+        op.open("https://fc.yahoo.com", timeout=10).read()   # answers 404 but sets the cookie we need
+    except Exception:  # noqa: BLE001
+        pass
+    crumb = op.open("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=10).read().decode().strip()
+    if not crumb or len(crumb) > 40 or "<" in crumb:
+        raise ValueError("no Yahoo crumb")
+    syms = list(symbols)
+
+    def batch(b):
+        if time.time() > deadline:
+            return {}
+        try:
+            url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + urllib.parse.quote(",".join(b)) + "&crumb=" + urllib.parse.quote(crumb)
+            data = json.loads(op.open(url, timeout=20).read())
+            return {r["symbol"]: float(r["marketCap"]) for r in data["quoteResponse"]["result"] if r.get("marketCap")}
+        except Exception:  # noqa: BLE001
+            return {}
+    caps = {}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for res in ex.map(batch, [syms[i:i + 40] for i in range(0, len(syms), 40)]):
+            caps.update(res)
+    if len(caps) < len(syms) * 0.5:
+        raise ValueError(f"only {len(caps)} of {len(syms)} market caps returned")
+    return caps
+
+
+DUAL_CLASS = {"GOOGL": "GOOG", "GOOG": "GOOGL", "FOXA": "FOX", "FOX": "FOXA", "NWSA": "NWS", "NWS": "NWSA"}
+DOW_DIVISOR_FALLBACK = 0.1627   # used only if the live divisor cannot be derived (all 30 prices and the index level)
+
+
+def rank_universe(u, rows, index_q, caps):
+    """Adds weight w (% of the index) and contribution c to every row; returns (method, basis, unit, summary).
+    c is the stock's contribution to the index move: bp of the index (weight % x move %), or index points for the Dow."""
+    syms = {r["symbol"] for r in rows}
+    if u["bbg"]:
+        for r in rows:
+            r["w"] = u["bbg"].get(r["symbol"])
+            r["c"] = None if r["w"] is None else r["w"] * r["pct"]
+        method, basis, unit = "Bloomberg index weights", "index", "bp"
+    elif u["weighting"] == "price":   # Dow: price-weighted, so a $1 move counts the same in any member
+        tot = sum(r["last"] for r in rows)
+        div = tot / index_q["last"] if index_q and len(rows) == len(u["items"]) and index_q["last"] else DOW_DIVISOR_FALLBACK
+        for r in rows:
+            r["w"] = r["last"] / tot * 100
+            r["c"] = (r["last"] - r["last"] / (1 + r["pct"] / 100)) / div
+        method, basis, unit = "Price-weighted (Dow divisor)", "index", "pts"
+    elif caps and sum(1 for r in rows if r["ysym"] in caps) >= 0.8 * len(rows):
+        capv = {}
+        for r in rows:
+            c = caps.get(r["ysym"])
+            if c and r["symbol"] in DUAL_CLASS and DUAL_CLASS[r["symbol"]] in syms:
+                c = c / 2   # Yahoo reports the whole company's cap for each share class
+            capv[r["symbol"]] = c
+        tot = sum(v for v in capv.values() if v)
+        for r in rows:
+            r["w"] = capv[r["symbol"]] / tot * 100 if capv[r["symbol"]] else None
+            r["c"] = None if r["w"] is None else r["w"] * r["pct"]
+        method, basis, unit = "Market-cap weighted (Yahoo)", ("index" if u["wiki"] else "list"), "bp"
+    else:
+        for r in rows:
+            r["w"], r["c"] = None, r["pct"]
+        method, basis, unit = "Unweighted % move (no weights available)", "none", "%"
+    summ = {}
+    ranked = [r for r in rows if r["c"] is not None]
+    if unit == "bp" and basis == "index":
+        summ["explained"] = sum(r["c"] for r in ranked)
+        if u["bbg"]:
+            summ["covered"] = sum(r["w"] for r in ranked)
+    elif unit == "bp" and basis == "list":
+        summ["ret"] = sum(r["c"] for r in ranked) / 100
+    elif unit == "pts":
+        summ["explained"] = sum(r["c"] for r in ranked)
+    return method, basis, unit, summ
+
+
+def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketcaps):
     deadline = time.time() + budget_seconds
+    root = os.path.dirname(os.path.abspath(path))
     unis = read_movers(path)
-    for u in unis:   # live US index members
-        if u["wiki"]:
+    for u in unis:
+        u["bbg"] = {}
+        wp = os.path.join(root, u["weights"]) if u["weights"] else None
+        if wp and os.path.exists(wp):   # 1. Bloomberg index weights supplied by the user: exact, and also set the member list
+            try:
+                ws = read_weights(wp)
+                if len(ws) >= 5:
+                    u["items"] = [(yahoo_candidates(code), name, disp) for code, name, disp, w in ws]
+                    u["bbg"] = {disp: w for code, name, disp, w in ws}
+                    continue
+                errors.append(f"movers {u['name']}: {u['weights']} has fewer than 5 usable rows, ignored")
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"movers {u['name']}: {u['weights']} unreadable ({e})")
+        if u["wiki"]:   # 2. live index members from Wikipedia
             try:
                 u["items"] = [([s], n, s) for s, n in wikipedia_members(u["wiki"])]
             except Exception as e:  # noqa: BLE001
@@ -397,9 +542,11 @@ def build_movers(path, errors, budget_seconds=240, top=5):
                 if u["name"].startswith("Dow"):
                     u["items"] = [([s], s, s) for s in DOW_FALLBACK]
                     errors.append("movers Dow 30: used built-in fallback list")
-    cache, jobs = {}, []
+    cache, jobs, idx = {}, [], {}
     with ThreadPoolExecutor(max_workers=10) as ex:
         for u in unis:
+            if u["index"] and u["index"] not in cache:
+                cache[u["index"]] = ex.submit(quick_quote, [u["index"]], deadline)
             for cands, name, disp in u["items"]:
                 key = tuple(cands)
                 if key not in cache:   # a stock in several universes is fetched once
@@ -410,21 +557,37 @@ def build_movers(path, errors, budget_seconds=240, top=5):
         for uname, name, disp, fu in jobs:
             try:
                 q = fu.result()
-                by[uname].append({"symbol": disp, "label": name, "pct": q["pct"], "last": q["last"]})
+                by[uname].append({"symbol": disp, "label": name, "pct": q["pct"], "last": q["last"], "ysym": q["ysym"]})
             except Exception:  # noqa: BLE001
                 failed[uname].append(disp)
+        for u in unis:
+            if u["index"]:
+                try:
+                    idx[u["name"]] = cache[u["index"]].result()
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"movers {u['name']}: index {u['index']} unavailable ({e})")
+    need = {r["ysym"] for u in unis if not u["bbg"] and u["weighting"] != "price" for r in by[u["name"]]}
+    caps = {}
+    if need:   # 3. market caps (Yahoo) for universes without Bloomberg weights
+        try:
+            caps = caps_fn(sorted(need), deadline)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"movers: market-cap data unavailable ({e}); those cards fall back to unweighted % move")
     out = {}
     for u in unis:
-        rows = by[u["name"]]
-        total = len(u["items"])
+        rows, total = by[u["name"]], len(u["items"])
         if failed[u["name"]]:
             errors.append(f"movers {u['name']}: {len(rows)}/{total} loaded; no data for {', '.join(failed[u['name']][:8])}"
                           + (" ..." if len(failed[u["name"]]) > 8 else ""))
         if len(rows) < max(5, total // 2):
             continue   # too little data to call anything a top mover
-        rows.sort(key=lambda r: r["pct"], reverse=True)
+        method, basis, unit, summ = rank_universe(u, rows, idx.get(u["name"]), caps)
+        ranked = sorted((r for r in rows if r["c"] is not None), key=lambda r: r["c"], reverse=True)
+        keep = lambda r: {k: r[k] for k in ("symbol", "label", "pct", "w", "c")}   # noqa: E731
+        iq = idx.get(u["name"])
         out[u["name"]] = {"n": total, "loaded": len(rows), "adv": sum(1 for r in rows if r["pct"] > 0), "dec": sum(1 for r in rows if r["pct"] < 0),
-                          "gainers": rows[:top], "losers": rows[-top:][::-1]}
+                          "method": method, "basis": basis, "unit": unit, "index": {"symbol": u["index"], "pct": iq["pct"], "last": iq["last"]} if iq else None,
+                          **summ, "gainers": [keep(r) for r in ranked if r["c"] > 0][:top], "losers": [keep(r) for r in ranked[::-1] if r["c"] < 0][:top]}
     return out
 
 

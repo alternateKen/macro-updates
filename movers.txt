@@ -1,23 +1,43 @@
-# TOP MOVERS UNIVERSES for the Morning snapshot. Edit this file on GitHub (pencil icon) and save: the page rebuilds itself.
+# TOP MOVERS for the Morning snapshot. Edit this file on GitHub (pencil icon) and save: the page rebuilds itself.
 #
-# [Name]                      starts a universe (one "Top movers" card on the snapshot)
-# @wikipedia <page address>   loads the index members live from the Wikipedia table each run (US indices)
+# Stocks are RANKED BY CONTRIBUTION TO THE INDEX MOVE, not by raw % change:
+#   contribution (bp of the index) = the stock's weight in the index (%) x its day move (%)
+#   Dow 30 = price-weighted, so contribution is in index points (price change / Dow divisor).
+# Weights come from, in order of preference:
+#   1. Bloomberg index weights you drop into the weights/ folder (exact). See weights/README.txt.
+#   2. Market caps from Yahoo (approximate; US lists are the full index, Asian lists are only a curated large-cap basket).
+#   3. If neither is available the card says "Unweighted % move".
+#
+# [Name]                      starts a universe (one "Top movers" card)
+# @index SYMBOL               Yahoo symbol of the index, shown for comparison
+# @weights weights/file.csv   optional Bloomberg weights file for this universe (if the file exists it also replaces the stock list)
+# @weighting price            only for price-weighted indices (Dow)
+# @wikipedia <page address>   loads the index members live from Wikipedia each run (US indices)
 # CODE | Company name         one stock per line, Bloomberg style codes (0700 HK, 600519 CH, 2330 TT, 005930 KS) or US tickers
 #
-# The Asian lists are curated large caps (not full index membership), chosen to include the AI / tech supply chain.
+# The Asian lists are curated large caps, chosen to include the AI / tech supply chain.
 # "China H-shares" = Hong Kong-listed mainland China large caps (H-shares plus the big HK-listed tech names).
 # Lines starting with # are ignored.
 
 [Dow 30]
+@index ^DJI
+@weighting price
+@weights weights/dow.csv
 @wikipedia https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average
 
 [S&P 500]
+@index ^GSPC
+@weights weights/spx.csv
 @wikipedia https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
 
 [Nasdaq-100]
+@index ^NDX
+@weights weights/ndx.csv
 @wikipedia https://en.wikipedia.org/wiki/Nasdaq-100
 
 [China H-shares]
+@index ^HSCE
+@weights weights/hshares.csv
 0700 HK | Tencent
 9988 HK | Alibaba
 3690 HK | Meituan
@@ -60,6 +80,8 @@
 1109 HK | China Resources Land
 
 [China A-shares]
+@index 000300.SS
+@weights weights/ashares.csv
 600519 CH | Kweichow Moutai
 300750 CH | CATL
 601318 CH | Ping An Insurance
@@ -102,6 +124,8 @@
 601857 CH | PetroChina
 
 [Taiwan]
+@index ^TWII
+@weights weights/taiex.csv
 2330 TT | TSMC
 2317 TT | Hon Hai (Foxconn)
 2454 TT | MediaTek
@@ -141,6 +165,8 @@
 1216 TT | Uni-President
 
 [Korea]
+@index ^KS11
+@weights weights/kospi.csv
 005930 KS | Samsung Electronics
 000660 KS | SK Hynix
 373220 KS | LG Energy Solution
