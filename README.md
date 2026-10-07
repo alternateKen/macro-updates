@@ -34,3 +34,9 @@ Nasdaq-100 (members read live from Wikipedia) and China H-shares, China A-shares
   the card is marked "approx", and Asian lists are only a basket of large caps, not the whole index).
 - How to export the Bloomberg weights: see `weights/README.txt`.
 To change the Asian lists, open `movers.txt` on GitHub, click the pencil, edit and save. Bloomberg style codes work (`0700 HK`, `600519 CH`, `2330 TT`, `005930 KS`).
+
+## Bloomberg screens (typed in by hand)
+Bloomberg cannot be read automatically from GitHub, so three screens are kept as small files in the `bloomberg/` folder and shown on the page:
+`wirp_us.csv` + `wirp_global.csv` (Fed funds futures and every central bank's next meeting, from WIRP), `credit.csv` (CDX / iTraxx spreads) and
+`eco.csv` (US releases with Bloomberg consensus, from ECO). Each file starts with an `# asof:` date; the page shows it and turns amber when it is more
+than one working day old (a week for the calendar). See `bloomberg/README.txt` for how to refresh them. Saving a file rebuilds the page.

@@ -1,0 +1,33 @@
+# source: Bloomberg ECO, United States, all economic releases, agenda view 7-14 Oct 2026
+# asof: 2026-10-07
+# timezone: +08:00
+# note: times are exactly as the terminal shows them (UTC+8, so CPI at 20:30 = 8:30am New York). The page converts to New York time.
+datetime,event,period,survey,actual,prior,revised
+2026-10-07 19:00,MBA Mortgage Applications,Oct 2,,-4.2%,-6.0%,
+2026-10-07 23:00,NY Fed 1-Yr Inflation Expectations,Sep,3.64%,,3.58%,
+2026-10-08 02:00,FOMC Meeting Minutes,Sep 16,,,,
+2026-10-08 03:00,Consumer Credit,Aug,$15.000b,,$18.062b,
+2026-10-08 20:30,Initial Jobless Claims,Oct 3,200k,,197k,
+2026-10-08 20:30,Initial Claims 4-Wk Moving Avg,Oct 3,,,200.00k,
+2026-10-08 20:30,Continuing Claims,Sep 26,1700k,,1701k,
+2026-10-08 22:00,Wholesale Trade Sales MoM,Aug,,,0.8%,
+2026-10-08 22:00,Wholesale Inventories MoM,Aug F,0.7%,,0.7%,
+2026-10-09 22:00,U. of Mich. Sentiment,Oct P,47.6,,48.1,
+2026-10-09 22:00,U. of Mich. Current Conditions,Oct P,50.3,,50.9,
+2026-10-09 22:00,U. of Mich. Expectations,Oct P,45.5,,46.3,
+2026-10-09 22:00,U. of Mich. 1 Yr Inflation,Oct P,4.7%,,4.6%,
+2026-10-09 22:00,U. of Mich. 5-10 Yr Inflation,Oct P,3.5%,,3.4%,
+2026-10-13 18:00,NFIB Small Business Optimism,Sep,,,98.7,
+2026-10-13 20:15,ADP Weekly Employment Change,Sep 26,,,23.750k,
+2026-10-13 22:00,Existing Home Sales,Sep,3.96m,,3.98m,
+2026-10-13 22:00,Existing Home Sales MoM,Sep,-0.4%,,-2.0%,
+2026-10-14 02:00,Federal Budget Balance,Sep,,,-$166.8b,
+2026-10-14 19:00,MBA Mortgage Applications,Oct 9,,,-4.2%,
+2026-10-14 20:30,Real Avg Weekly Earnings YoY,Sep,,,0.3%,0.4%
+2026-10-14 20:30,CPI MoM,Sep,0.6%,,0.4%,
+2026-10-14 20:30,Core CPI MoM,Sep,0.2%,,0.3%,
+2026-10-14 20:30,CPI YoY,Sep,3.6%,,3.4%,
+2026-10-14 20:30,Core CPI YoY,Sep,2.5%,,2.4%,
+2026-10-14 20:30,CPI Index NSA,Sep,336.620,,334.980,
+2026-10-14 20:30,Core CPI Index SA,Sep,338.453,,337.765,
+2026-10-14 20:30,Real Avg Hourly Earning YoY,Sep,,,-0.3%,

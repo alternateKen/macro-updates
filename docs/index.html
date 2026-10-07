@@ -75,6 +75,13 @@ h3{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05e
 .mvr{grid-template-columns:minmax(80px,1.1fr) 1fr 92px}
 .mvm{font-size:11px;color:var(--mute);margin:2px 0 3px}.mvm.approx{color:var(--am)}
 .mvl{font-size:12px;margin:2px 0 4px}
+button.seg{padding:4px 12px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;font-size:12px}
+button.seg.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.bbg-asof{font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--mute);margin-left:8px}.bbg-asof.am{color:var(--am);font-weight:600}
+.rng{position:relative;display:inline-block;width:90px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle}
+.rng i{position:absolute;top:-3px;width:3px;height:12px;border-radius:2px;background:var(--ink)}.rng i.dn{background:var(--dn)}
+.rng u{position:absolute;top:-1px;width:2px;height:8px;background:var(--mute);text-decoration:none}
+.legend{margin-top:4px}.legend span{margin-right:14px;font-size:12px;color:var(--mute)}.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
 tr.grp td{padding:10px 6px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:600;border-top:1px solid var(--line);text-align:left}
 .heat small{font-size:10px}
 .tone.mu{color:var(--am);border-color:var(--am)}
@@ -203,6 +210,14 @@ function briefText(d){
     L.push('Positive: '+m.gainers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
     L.push('Negative: '+m.losers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
   });
+  if(d.bbg&&d.bbg.wirp){const w=d.bbg.wirp;L.push('',`## Fed funds futures pricing (Bloomberg WIRP, as of ${w.asof}; plus = hikes, minus = cuts; target ${w.target}%, effective ${w.effective}%)`);
+    w.meetings.forEach(m=>L.push(`${m.date}: cumulative ${f(m.cum,2)} | ${f(m.pct,1)}% at meeting | implied rate ${f(m.rate,3)}%`));
+    if(d.bbg.wirp_global)L.push('Next-meeting hike(+)/cut(-) odds: '+d.bbg.wirp_global.rows.map(r=>`${r.model} ${r.date} ${f(r.pct,1)}%`).join('; '));}
+  if(d.bbg&&d.bbg.credit){L.push('',`## Credit indices (Bloomberg, as of ${d.bbg.credit.asof}; level | day chg | vs 3M avg | 3M chg | 3M low-high; price-quoted indices marked: a falling price = wider spreads)`);
+    d.bbg.credit.rows.forEach(r=>L.push(`${r.index}${r.quote==='price'?' (price)':''}: ${f(r.level,2)} | ${f(r.chg,2)} | ${f(r.vs_avg,1)} | ${f(r.chg_3m,1)} | ${f(r.low,1)}-${f(r.high,1)}`));}
+  if(d.bbg&&d.bbg.eco){const now=Date.now();const up=d.bbg.eco.events.filter(x=>new Date(x.time)>=now-2*3600e3&&ECO_KEY.test(x.event));
+    if(up.length){L.push('','## Upcoming US data (Bloomberg ECO consensus; New York time)');
+      up.forEach(x=>L.push(`${new Date(x.time).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})} ET: ${x.event} ${x.period} | survey ${x.survey||'n/a'} | prior ${x.prior||'n/a'}${x.actual?' | ACTUAL '+x.actual:''}`));}}
   L.push('','## Headlines');
   d.news.forEach(n=>L.push(`- [${n.source}] ${n.title}`));
   return L.join('\n');
@@ -224,6 +239,107 @@ const NO_READ=new Set(['CL=F','BZ=F','NG=F','RB=F','GC=F','SI=F','PL=F','ZC=F','
 const dcl=v=>v==null||v===0?'flat':v>0?'bu':'am';                       // direction-only colour
 const cm=(sym,v)=>v==null||v===0?'flat':NO_READ.has(sym)?dcl(v):((HIGHER_BAD.has(sym)?-v:v)>0?'up':'dn');
 const col=(txt,c)=>`<span class="${c}">${txt}</span>`;
+// ================= Bloomberg screens (typed into bloomberg/*.csv): rate pricing, credit, economic calendar =================
+const escH=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ECO_KEY=/^(CPI MoM|Core CPI MoM|CPI YoY|Core CPI YoY|Initial Jobless Claims|Continuing Claims|FOMC Meeting Minutes|U\. of Mich\. Sentiment|U\. of Mich\. 1 Yr Inflation|Existing Home Sales|NY Fed 1-Yr Inflation Expectations)$/;
+function bizAge(asof){   // working days since the Bloomberg file's date (weekends do not count as stale)
+  if(!asof)return null;
+  const a=new Date(asof+'T12:00:00'),n=new Date();n.setHours(12,0,0,0);
+  let k=0;for(const x=new Date(a);x<n;){x.setDate(x.getDate()+1);if(x.getDay()!==0&&x.getDay()!==6)k++}
+  return k;
+}
+function asofTag(asof,maxBiz){
+  if(!asof)return '';
+  const a=bizAge(asof),dt=new Date(asof+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return `<span class="bbg-asof ${a>maxBiz?'am':''}">Bloomberg, as of ${dt}${a>maxBiz?` · ${a} working days old: refresh the bloomberg/ files`:''}</span>`;
+}
+const mdate=x=>new Date(x+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+const hcs=(v,dg=2)=>v==null?'–':(v>0?'+':'')+v.toFixed(dg);
+const hikeCls=v=>v>0?'dn':v<0?'up':'';          // more hikes priced = bad for markets (red); more cuts = good (green)
+// credit: 'widening' = bad. Spread-quoted: spread up. Price-quoted (CDX HY, EM): price down.
+const widen=(r,v)=>v==null||v===0?0:(r.quote==='price'?(v<0?1:-1):(v>0?1:-1));
+const wideCls=w=>w>0?'dn':w<0?'up':'';
+
+function wirpChart(M,eff){
+  const W=560,H=210,L=44,R=40,T=14,B=28,n=M.length;
+  const rates=M.map(m=>m.rate).concat(eff!=null?[eff]:[]);
+  const rmin=Math.floor((Math.min(...rates)-0.05)*10)/10,rmax=Math.ceil((Math.max(...rates)+0.05)*10)/10;
+  const cmax=Math.max(0.5,...M.map(m=>Math.abs(m.cum))),cmin=Math.min(0,...M.map(m=>m.cum));
+  const cm=Math.ceil(cmax*2)/2,cn=cmin<0?-Math.ceil(-cmin*2)/2:0;
+  const x=i=>L+(i+0.5)*(W-L-R)/n,yr=v=>T+(rmax-v)/(rmax-rmin||1)*(H-T-B),yc=v=>T+(cm-v)/(cm-cn||1)*(H-T-B);
+  const bw=Math.max(6,(W-L-R)/n*0.6);
+  const bars=M.map((m,i)=>`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${Math.min(yc(m.cum),yc(0)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.abs(yc(m.cum)-yc(0)).toFixed(1)}" rx="2" fill="${m.cum>=0?'var(--dn)':'var(--up)'}" opacity=".35"/>`).join('');
+  const line=`<polyline fill="none" stroke="var(--acc)" stroke-width="2.2" points="${M.map((m,i)=>`${x(i).toFixed(1)},${yr(m.rate).toFixed(1)}`).join(' ')}"/>`+M.map((m,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${yr(m.rate).toFixed(1)}" r="2.6" fill="var(--acc)"/>`).join('');
+  let grid='';for(let g=rmin;g<=rmax+1e-9;g+=0.2){grid+=`<line x1="${L}" x2="${W-R}" y1="${yr(g).toFixed(1)}" y2="${yr(g).toFixed(1)}" stroke="var(--line)"/><text x="${L-6}" y="${(yr(g)+3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--mute)">${g.toFixed(1)}</text>`}
+  for(let g=cn;g<=cm+1e-9;g+=0.5){grid+=`<text x="${W-R+6}" y="${(yc(g)+3).toFixed(1)}" font-size="9" fill="var(--mute)">${g>0?'+':''}${g.toFixed(1)}</text>`}
+  const eline=eff!=null?`<line x1="${L}" x2="${W-R}" y1="${yr(eff).toFixed(1)}" y2="${yr(eff).toFixed(1)}" stroke="var(--mute)" stroke-dasharray="4 3"/><text x="${L+4}" y="${(yr(eff)-4).toFixed(1)}" font-size="9" fill="var(--mute)">effective ${eff.toFixed(2)}%</text>`:'';
+  const labs=M.map((m,i)=>`<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle" font-size="9" fill="var(--mute)">${new Date(m.date+'T12:00:00').toLocaleDateString('en-US',{month:'short'})} ${String(m.date).slice(2,4)}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:260px">${grid}${eline}${bars}${line}${labs}</svg>
+   <div class="legend"><span><i style="background:var(--acc)"></i>Implied Fed funds rate (left, %)</span><span><i style="background:var(--dn);opacity:.5"></i>Hikes priced (right, cumulative)</span><span><i style="background:var(--up);opacity:.5"></i>Cuts priced</span></div>`;
+}
+function bbgRates(d){
+  const w=d.bbg&&d.bbg.wirp;
+  if(!w||!w.meetings.length)return '';
+  const M=w.meetings,last=M[M.length-1],first=M[0];
+  const dir=last.cum>0.25?'HIKES':last.cum<-0.25?'CUTS':'little change';
+  const rows=M.map(m=>`<tr><td class="name">${mdate(m.date)}</td><td class="${hikeCls(m.cum)}">${hcs(m.cum)}</td><td class="${hikeCls(m.pct)}">${m.pct==null?'–':hcs(m.pct,1)+'%'}</td><td class="hide-sm">${hcs((m.chg||0)*100,0)} bp</td><td>${m.rate.toFixed(3)}%</td></tr>`).join('');
+  const g={};(d.bbg.wirp_global?d.bbg.wirp_global.rows:[]).forEach(r=>(g[r.region]=g[r.region]||[]).push(r));
+  const grows=Object.entries(g).map(([reg,rs])=>`<tr class="grp"><td colspan="3">${escH(reg)}</td></tr>`+rs.map(r=>`<tr><td class="name">${escH(r.model)}</td><td>${mdate(r.date)}</td><td class="${hikeCls(r.pct)}">${r.pct==null?'–':hcs(r.pct,1)+'%'}</td></tr>`).join('')).join('');
+  return `<section id="bbg-rates" class="wide"><h2>Central-bank pricing (Bloomberg WIRP) ${asofTag(w.asof,1)}</h2>
+   <div class="note" style="margin:0 0 8px"><b>Fed funds:</b> target ${w.target!=null?w.target.toFixed(2):'–'}% · effective ${w.effective!=null?w.effective.toFixed(2):'–'}% · futures are pricing <b class="${hikeCls(last.cum)}">${dir}</b>: ${hcs(first.cum)} at the ${mdate(first.date)} meeting, ${hcs(last.cum)} by ${mdate(last.date)} (implied ${last.rate.toFixed(2)}%). Plus = hikes, minus = cuts.</div>
+   <div class="snap-grid"><div>${wirpChart(M,w.effective)}
+      <div class="scroll"><table><tr><th>Meeting</th><th>Cumulative</th><th>% at meeting</th><th class="hide-sm">Rate chg</th><th>Implied</th></tr>${rows}</table></div></div>
+    <div><h3>Next meeting, every central bank</h3><div class="scroll"><table><tr><th></th><th>Meeting</th><th>% hike (+) / cut (−)</th></tr>${grows}</table></div>
+     <div class="note">Above 100% means more than one move is priced. Red = hike odds (tighter policy), green = cut odds.</div></div></div></section>`;
+}
+function rangeBar(r){
+  if(r.low==null||r.high==null||r.high<=r.low)return '';
+  const pos=Math.max(0,Math.min(1,(r.level-r.low)/(r.high-r.low))),av=r.avg==null?null:Math.max(0,Math.min(1,(r.avg-r.low)/(r.high-r.low)));
+  const bad=r.quote==='price'?pos<=0.15:pos>=0.85;
+  return `<span class="rng" title="3M low ${r.low} · avg ${r.avg} · high ${r.high}">${av!=null?`<u style="left:${(av*100).toFixed(0)}%"></u>`:''}<i class="${bad?'dn':''}" style="left:calc(${(pos*100).toFixed(0)}% - 1px)"></i></span>`;
+}
+function bbgCredit(d){
+  const c=d.bbg&&d.bbg.credit;
+  if(!c||!c.rows.length)return '';
+  const f1=(v,dg=1)=>v==null?'–':(v>0?'+':'')+v.toFixed(dg);
+  let grp='';
+  const body=c.rows.map(r=>{
+    const head=r.group!==grp?(grp=r.group,`<tr class="grp"><td colspan="8">${escH(r.group)}</td></tr>`):'';
+    const wc=wideCls(widen(r,r.chg)),w3=wideCls(widen(r,r.chg_3m)),wv=wideCls(widen(r,r.vs_avg));
+    return head+`<tr><td class="name">${escH(r.index)}${r.quote==='price'?' <small class="mu" title="quoted as a price: a falling price = wider spreads">(price)</small>':''}</td>
+      <td>${r.level.toFixed(2)}</td><td class="${wc}">${f1(r.chg,2)}</td><td class="hide-sm">${rangeBar(r)}</td><td class="hide-sm ${wv}">${f1(r.vs_avg)}</td><td class="${w3}">${f1(r.chg_3m)}</td><td class="hide-sm">${r.low==null?'–':r.low.toFixed(1)+' – '+r.high.toFixed(1)}</td><td class="hide-sm">${r.roll==null?'–':f1(r.roll)}</td></tr>`}).join('');
+  return `<section id="bbg-credit" class="wide"><h2>Credit indices (Bloomberg CDX / iTraxx) ${asofTag(c.asof,1)}</h2><div class="scroll"><table>
+    <tr><th></th><th>Level</th><th>Day chg</th><th class="hide-sm">3M range (bar) · tick = avg</th><th class="hide-sm">vs 3M avg</th><th>3M chg</th><th class="hide-sm">3M low – high</th><th class="hide-sm">Roll</th></tr>${body}</table></div>
+    <div class="note"><span class="dn">Red</span> = spreads wider (bad for risk), <span class="up">green</span> = tighter. Indices quoted as a price (CDX High Yield, CDX EM) work in reverse: a falling price means wider spreads; the number shown is the raw price change. These fill in for the FRED credit spreads, which cannot be fetched.</div></section>`;
+}
+let ecoAll=false;
+function ecoNum(x){const v=parseFloat(String(x||'').replace(/[^0-9.\-]/g,''));return isNaN(v)?null:v}
+function bbgEco(d){
+  const e=d.bbg&&d.bbg.eco;
+  if(!e||!e.events.length)return '';
+  const et=iso=>new Date(iso).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'});
+  const hk=iso=>new Date(iso).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Hong_Kong'});
+  const now=Date.now();
+  const evs=e.events.filter(x=>ecoAll||ECO_KEY.test(x.event));
+  const rows=evs.map(x=>{
+    const past=new Date(x.time)<now-3600e3,key=ECO_KEY.test(x.event);
+    const a=ecoNum(x.actual),sv=ecoNum(x.survey);
+    const diff=a!=null&&sv!=null?a-sv:null;
+    const dc=diff==null||diff===0?'':diff>0?'bu':'am';
+    return `<tr style="${past?'opacity:.6':''}"><td class="name">${et(x.time)}<small class="mu" style="display:block;font-weight:400">${hk(x.time)} HK</small></td><td style="text-align:left;${key?'font-weight:600':''}">${escH(x.event)} <small class="mu">${escH(x.period)}</small></td>
+      <td>${escH(x.survey)||'–'}</td><td class="${dc}" style="font-weight:600">${escH(x.actual)||'–'}${diff!=null?` <small>${diff>0?'▲':diff<0?'▼':'='} vs survey</small>`:''}</td><td>${escH(x.prior)||'–'}${x.revised?` <small class="mu">rev ${escH(x.revised)}</small>`:''}</td></tr>`}).join('');
+  return `<section id="bbg-eco" class="wide"><h2>US data calendar with consensus (Bloomberg ECO) ${asofTag(e.asof,6)}</h2>
+   <div style="margin-bottom:8px"><button class="seg ${ecoAll?'':'on'}" data-eco="key">Key releases</button> <button class="seg ${ecoAll?'on':''}" data-eco="all">All releases</button> <span class="note">Times in New York (Hong Kong time underneath)</span></div>
+   <div class="scroll"><table><tr><th style="text-align:left">When (New York)</th><th style="text-align:left">Release</th><th>Survey</th><th>Actual</th><th>Prior</th></tr>${rows}</table></div>
+   <div class="note">Actual vs survey: <span class="bu">blue ▲</span> above consensus, <span class="am">amber ▼</span> below (direction only: whether a beat is good or bad depends on the release).</div></section>`;
+}
+function wireEco(d){
+  document.querySelectorAll('button[data-eco]').forEach(b=>b.addEventListener('click',()=>{
+    ecoAll=b.dataset.eco==='all';
+    const sec=document.getElementById('bbg-eco');if(!sec)return;
+    const tmp=document.createElement('div');tmp.innerHTML=bbgEco(d);sec.replaceWith(tmp.firstElementChild);wireEco(d);
+  }));
+}
 // Top movers: stocks ranked by CONTRIBUTION to the index move (weight x move), five up and five down per universe
 function moversBlock(d){
   const M=d.movers;
@@ -285,6 +401,38 @@ function snapshot(d){
   const eqm=[es,nq].filter(r=>r&&r.pct!=null&&Math.abs(r.pct)>=0.5);
   if(eqm.length){const av=eqm.reduce((p,r)=>p+r.pct,0)/eqm.length;
     F.push([`<b>Equities:</b> ${eqm.map(r=>col(`${r.label} ${pc(r.pct)}`,cm(r.symbol,r.pct))).join(', ')}`,cm('ES=F',av)])}
+  // ---- Bloomberg lines: Fed / central-bank pricing, credit, data ahead
+  const bb=d.bbg||{};
+  if(bb.wirp&&bb.wirp.meetings.length){
+    const M=bb.wirp.meetings,nx=M[0],lim=Date.now()+365*864e5;
+    const y1=M.filter(m=>new Date(m.date+'T12:00:00')<=lim).pop()||M[M.length-1];
+    const k=y1.cum>0.5?'dn':y1.cum<-0.5?'up':dcl(y1.cum);
+    const odds=nx.pct==null?'':`${Math.abs(nx.pct).toFixed(0)}% ${nx.pct>=0?'hike':'cut'} odds`;
+    F.push([`<b>Fed pricing:</b> next meeting ${mdate(nx.date)} ${col(odds,hikeCls(nx.pct)||'flat')} · ${col(`${hcs(y1.cum)} ${y1.cum>=0?'hikes':'cuts'} priced by ${mdate(y1.date)}`,k)} · implied ${y1.rate.toFixed(2)}% vs ${bb.wirp.effective!=null?bb.wirp.effective.toFixed(2):'–'}% effective ${asofTag(bb.wirp.asof,1)}`,k]);
+  }
+  if(bb.credit&&bb.credit.rows.length){
+    const names=['CDX Investment Grade','CDX High Yield','iTraxx Europe','iTraxx Crossover'];
+    const rs=names.map(n=>bb.credit.rows.find(r=>r.index===n)).filter(Boolean);
+    if(rs.length>=3){
+      const wide=rs.filter(r=>widen(r,r.chg)>0).length;
+      const k=wide>=Math.ceil(rs.length*0.75)?'dn':wide<=Math.floor(rs.length*0.25)?'up':'am';
+      const part=r=>{const w=widen(r,r.chg),near=r.high!=null&&r.low!=null&&r.high>r.low&&(r.quote==='price'?(r.level-r.low)/(r.high-r.low)<=0.15:(r.level-r.low)/(r.high-r.low)>=0.9);
+        return col(`${r.index.replace('Investment Grade','IG').replace('High Yield','HY')} ${r.level.toFixed(r.quote==='price'?2:(r.level<100?1:0))} (${hcs(r.chg,2)})${near?' near 3M wide':''}`,wideCls(w)||'flat')};
+      F.push([`<b>Credit:</b> ${rs.map(part).join(' · ')} ${asofTag(bb.credit.asof,1)}`,k]);
+    }
+  }
+  if(bb.eco&&bb.eco.events.length){
+    const now=Date.now(),keyEv=bb.eco.events.filter(x=>ECO_KEY.test(x.event)&&new Date(x.time)>=now-2*3600e3);
+    let sel=keyEv.filter(x=>new Date(x.time)<=now+48*3600e3);
+    const near=sel.length>0;
+    if(!near)sel=keyEv.slice(0,4);
+    if(sel.length){
+      const etf=iso=>new Date(iso).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'});
+      const byT={};sel.forEach(x=>(byT[x.time]=byT[x.time]||[]).push(x));
+      const txt=Object.entries(byT).slice(0,4).map(([t,xs])=>`<b>${etf(t)} ET</b> ${xs.map(x=>`${escH(x.event)}${x.survey?` (exp ${escH(x.survey)})`:''}`).join(', ')}`).join(' · ');
+      F.push([`<b>${near?'Data in the next 48h':'Next key data'}:</b> ${txt}`,'bu']);
+    }
+  }
   // Asia-Pacific: how many of the headline markets closed higher, plus leaders and laggards
   const ah=asiaHeadRows(d.sections);
   if(ah.length>=4){
@@ -349,13 +497,14 @@ function render(d){
   const parts=[
     snapshot(d),quoteTable('Futures',S['Futures']),quoteTable('US Indices',S['US Indices']),
     S['Sectors (SPDR ETFs)']?heat(S['Sectors (SPDR ETFs)']):'',
-    ratesBlock(d),quoteTable('Rates (Yahoo, intraday)',S['Rates (Yahoo, intraday)'],true),jgbBlock(d.jgb),
-    quoteTable('Volatility & Credit ETFs',S['Volatility & Credit ETFs']),quoteTable('Mega-caps & Themes',S['Mega-caps & Themes']),quoteTable('Energy',S['Energy']),quoteTable('Metals',S['Metals']),quoteTable('Agriculture',S['Agriculture']),quoteTable('Other commodities',S['Other commodities']),
+    ratesBlock(d),bbgRates(d),quoteTable('Rates (Yahoo, intraday)',S['Rates (Yahoo, intraday)'],true),jgbBlock(d.jgb),
+    bbgCredit(d),quoteTable('Volatility & Credit ETFs',S['Volatility & Credit ETFs']),quoteTable('Mega-caps & Themes',S['Mega-caps & Themes']),quoteTable('Energy',S['Energy']),quoteTable('Metals',S['Metals']),quoteTable('Agriculture',S['Agriculture']),quoteTable('Other commodities',S['Other commodities']),
     quoteTable('FX',S['FX']),quoteTable('Crypto',S['Crypto']),quoteTable('Europe Indices',S['Europe Indices']),asiaBlock(S),
-    claudeBlock(),newsBlock(d.news),calendar,notes
+    bbgEco(d),claudeBlock(),newsBlock(d.news),calendar,notes
   ].join('');
   document.getElementById('main').innerHTML=parts;
-  const ids=[['snapshot','Snapshot'],['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['jgb','JGB'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['asia-heat','Asia'],['europe-indices','Europe'],['claude-brief','Claude'],['news','News'],['calendar','Calendar'],['notes','Notes']];
+  wireEco(d);
+  const ids=[['snapshot','Snapshot'],['futures','Futures'],['us-indices','Equities'],['sectors','Sectors'],['curve-sec','Curve'],['rates-yahoo-intraday','Rates'],['jgb','JGB'],['bbg-rates','Fed odds'],['bbg-credit','Credit'],['bbg-eco','Data'],['energy','Energy'],['metals','Metals'],['fx','FX'],['crypto','Crypto'],['asia-heat','Asia'],['europe-indices','Europe'],['claude-brief','Claude'],['news','News'],['calendar','Calendar'],['notes','Notes']];
   document.getElementById('nav').innerHTML=ids.filter(([i])=>document.getElementById(i)).map(([i,l])=>`<a href="#${i}">${l}</a>`).join('');
   const n=document.getElementById('note');
   try{n.value=localStorage.getItem('macro-note-'+new Date().toDateString())||'';n.addEventListener('input',()=>localStorage.setItem('macro-note-'+new Date().toDateString(),n.value))}catch(e){}
