@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Macro Morning Dashboard</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#14181f;--mute:#6a7280;--line:#e3e6eb;--up:#0b8a4b;--dn:#c62828;--acc:#2456d6}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e8ebf0;--mute:#8b93a1;--line:#262c36;--up:#35c27a;--dn:#ef6a6a;--acc:#6e97ff}}
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14181f;--mute:#6a7280;--line:#e3e6eb;--up:#0b8a4b;--dn:#c62828;--acc:#2456d6;--bu:#2456d6;--am:#b26a00;--up-bg:#e1f3e9;--dn-bg:#fbe4e4;--bu-bg:#e2eafb;--am-bg:#fcefd6}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e8ebf0;--mute:#8b93a1;--line:#262c36;--up:#35c27a;--dn:#ef6a6a;--acc:#6e97ff;--bu:#6e97ff;--am:#e0a030;--up-bg:#12301f;--dn-bg:#3a1a1a;--bu-bg:#172846;--am-bg:#3a2d10}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 header{padding:16px 20px 8px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:baseline;justify-content:space-between}
@@ -59,6 +59,19 @@ h3{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05e
 .chips{display:flex;flex-wrap:wrap;gap:5px}
 .chip{border:1px solid var(--line);border-radius:99px;padding:2px 9px;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .hl{margin:0;padding:0}
+
+.bu{color:var(--bu)}.am{color:var(--am)}
+.tone.mu{color:var(--am);border-color:var(--am)}
+.tile{border-left-width:4px}
+.tile.up{background:var(--up-bg);border-color:var(--up)}.tile.dn{background:var(--dn-bg);border-color:var(--dn)}
+.tile.bu{background:var(--bu-bg);border-color:var(--bu)}.tile.am{background:var(--am-bg);border-color:var(--am)}
+.tile .tc.up{color:var(--up)}.tile .tc.dn{color:var(--dn)}.tile .tc.bu{color:var(--bu)}.tile .tc.am{color:var(--am)}
+.tile .tc.up,.tile .tc.dn,.tile .tc.bu,.tile .tc.am{font-weight:600}
+.flags li.up{border-left-color:var(--up);background:var(--up-bg)}.flags li.dn{border-left-color:var(--dn);background:var(--dn-bg)}
+.flags li.bu{border-left-color:var(--bu);background:var(--bu-bg)}.flags li.am{border-left-color:var(--am);background:var(--am-bg)}
+.flags li{padding-right:8px;border-radius:0 6px 6px 0}
+.chip.up{background:var(--up-bg);border-color:var(--up)}.chip.dn{background:var(--dn-bg);border-color:var(--dn)}
+.chip.bu{background:var(--bu-bg);border-color:var(--bu)}.chip.am{background:var(--am-bg);border-color:var(--am)}
 </style>
 </head>
 <body>
@@ -160,30 +173,30 @@ function jgbBlock(rows){
     return `<tr><td class="name">${r.label}</td><td>${fmt(r.now,3)}%</td><td class="${cls(d)}">${b(d)}</td><td class="${cls(w)} hide-sm">${b(w)}</td><td class="${cls(m)} hide-sm">${b(m)}</td><td>${r.date.slice(5)}</td><td class="${cls(m)}">${spark(r.spark)}</td></tr>`}).join('');
   return `<section id="jgb"><h2>Japan government bond yields (MOF, end-of-day)</h2><table><tr><th></th><th>Yield</th><th>1-day</th><th class="hide-sm">1W chg</th><th class="hide-sm">1M chg</th><th>As of</th><th>60d</th></tr>${body}</table></section>`;
 }
-// Market-friendly colouring for the snapshot: green = good for markets, red = bad, grey = no clear read.
+// Snapshot colours: green/red = good/bad for markets; blue/amber = direction only where there is no clear market read.
 // Higher is BAD for these (so a fall shows green):
 const HIGHER_BAD=new Set(['^VIX','^VIX3M','^MOVE','DX-Y.NYB','^TNX','^FVX','^TYX','^IRX']);
-// No one-way market read (stay grey): oil, gas, gold, metals-other, grains, softs, FX crosses
+// No one-way market read: oil, gas, gold, other metals, grains, softs, FX pairs -> blue (up) / amber (down)
 const NO_READ=new Set(['CL=F','BZ=F','NG=F','RB=F','GC=F','SI=F','PL=F','ZC=F','ZW=F','ZS=F','CC=F','KC=F','SB=F','CT=F','USDJPY=X','EURUSD=X','GBPUSD=X','USDCNY=X','AUDUSD=X','USDCAD=X','USDMXN=X','USDCHF=X']);
-const mood=(sym,v)=>v==null||v===0||NO_READ.has(sym)?0:(HIGHER_BAD.has(sym)?-Math.sign(v):Math.sign(v));
-const mc=m=>m>0?'up':m<0?'dn':'';
-const col=(txt,m)=>`<span class="${mc(m)}">${txt}</span>`;
+const dcl=v=>v==null||v===0?'flat':v>0?'bu':'am';                       // direction-only colour
+const cm=(sym,v)=>v==null||v===0?'flat':NO_READ.has(sym)?dcl(v):((HIGHER_BAD.has(sym)?-v:v)>0?'up':'dn');
+const col=(txt,c)=>`<span class="${c}">${txt}</span>`;
 function snapshot(d){
   const all=Object.values(d.sections).flat();
   const q=sym=>all.find(r=>r.symbol===sym);
   const arrow=v=>v==null?'':v>0?'▲ ':v<0?'▼ ':'';
   const bp=(v,dg=1)=>v==null?'–':(v>0?'+':'')+(v*100).toFixed(dg)+' bp';
-  const tile=(label,val,chg,num,m)=>
-    `<div class="tile"><div class="tl">${label}</div><div class="tv">${val}</div><div class="tc ${mc(m)}">${arrow(num)}${chg}</div></div>`;
-  const qt=(sym,label,dg)=>{const r=q(sym);return r?tile(label,fmt(r.last,dg),pc(r.pct),r.pct,mood(sym,r.pct)):''};
+  const tile=(label,val,chg,num,cl)=>
+    `<div class="tile ${cl}"><div class="tl">${label}</div><div class="tv">${val}</div><div class="tc ${cl}">${arrow(num)}${chg}</div></div>`;
+  const qt=(sym,label,dg)=>{const r=q(sym);return r?tile(label,fmt(r.last,dg),pc(r.pct),r.pct,cm(sym,r.pct)):''};
   const g=id=>d.fred.find(r=>r.id===id), c=l=>d.curve.find(p=>p.label===l);
   const t10=q('^TNX'), s210=g('T10Y2Y'), j10=(d.jgb||[]).find(r=>r.id==='JGB10Y');
   const tiles=[
     qt('ES=F','S&amp;P 500 fut',0), qt('NQ=F','Nasdaq 100 fut',0), qt('RTY=F','Russell 2000 fut',0),
     qt('^VIX','VIX',2),
-    t10?tile('US 10y (live)',fmt(t10.last,3)+'%',bp(t10.chg,1),t10.chg,mood('^TNX',t10.chg)):'',
-    s210?tile('2s10s spread',(s210.now*100).toFixed(0)+' bp',s210.d1==null?'–':bp(s210.d1)+' d/d',s210.d1,0):'',
-    j10?tile('JGB 10y',fmt(j10.now,3)+'%',j10.d1==null?'–':bp(j10.d1)+' d/d',j10.d1,j10.d1==null?0:-Math.sign(j10.d1)):'',
+    t10?tile('US 10y (live)',fmt(t10.last,3)+'%',bp(t10.chg,1),t10.chg,cm('^TNX',t10.chg)):'',
+    s210?tile('2s10s spread',(s210.now*100).toFixed(0)+' bp',s210.d1==null?'–':bp(s210.d1)+' d/d',s210.d1,dcl(s210.d1)):'',
+    j10?tile('JGB 10y',fmt(j10.now,3)+'%',j10.d1==null?'–':bp(j10.d1)+' d/d',j10.d1,j10.d1==null||j10.d1===0?'flat':j10.d1>0?'dn':'up'):'',
     qt('USDJPY=X','USD/JPY',2), qt('DX-Y.NYB','Dollar index',2),
     qt('CL=F','WTI crude',2), qt('GC=F','Gold',0), qt('BTC-USD','Bitcoin',0)
   ].join('');
@@ -193,28 +206,30 @@ function snapshot(d){
   sig(q('ES=F')?.pct,0.15);sig(q('NQ=F')?.pct,0.15);sig(q('^VIX')?.pct,2,true);sig(q('HYG')?.pct,0.1);
   const tone=score>=2?['Risk-on','up']:score<=-2?['Risk-off','dn']:['Mixed','mu'];
 
-  const F=[];
+  const F=[];   // [html, colour class]
   const es=q('ES=F'),nq=q('NQ=F');
   const eqm=[es,nq].filter(r=>r&&r.pct!=null&&Math.abs(r.pct)>=0.5);
-  if(eqm.length)F.push(`<b>Equities:</b> ${eqm.map(r=>col(`${r.label} ${pc(r.pct)}`,mood(r.symbol,r.pct))).join(', ')}`);
+  if(eqm.length){const av=eqm.reduce((p,r)=>p+r.pct,0)/eqm.length;
+    F.push([`<b>Equities:</b> ${eqm.map(r=>col(`${r.label} ${pc(r.pct)}`,cm(r.symbol,r.pct))).join(', ')}`,cm('ES=F',av)])}
   const vix=q('^VIX');
-  if(vix){const v=vix.last,rg=v<15?['calm',1]:v<20?['normal',0]:v<25?['elevated',-1]:['high stress',-1];
-    F.push(`<b>Volatility:</b> VIX ${fmt(v,1)} ${col(pc(vix.pct),mood('^VIX',vix.pct))} – ${col(rg[0],rg[1])}${vix.pct!=null&&Math.abs(vix.pct)>=5?', sharp move':''}`)}
+  if(vix){const v=vix.last,rg=v<15?['calm','up']:v<20?['normal','flat']:v<25?['elevated','dn']:['high stress','dn'];
+    F.push([`<b>Volatility:</b> VIX ${fmt(v,1)} ${col(pc(vix.pct),cm('^VIX',vix.pct))} – ${col(rg[0],rg[1])}${vix.pct!=null&&Math.abs(vix.pct)>=5?', sharp move':''}`,
+      v>=20?'dn':cm('^VIX',vix.pct)==='flat'?rg[1]:cm('^VIX',vix.pct)])}
   const t2=c('2Y'),t10c=c('10Y');
   if(s210&&t2&&t10c&&t2.w1!=null&&t10c.w1!=null){
     const ch=((t10c.now-t2.now)-(t10c.w1-t2.w1))*100, lvl=(s210.now*100).toFixed(0);
-    F.push(`<b>Curve:</b> 2s10s at ${lvl} bp${s210.now<0?' (inverted)':''}; ${Math.abs(ch)<3?'little changed over 1 week':(ch>0?'steepened ':'flattened ')+Math.abs(ch).toFixed(0)+' bp over 1 week'}`)}
-  if(t10&&t10.chg!=null&&Math.abs(t10.chg*100)>=5)F.push(`<b>Rates:</b> US 10y ${col((t10.chg>0?'up ':'down ')+Math.abs(t10.chg*100).toFixed(1)+' bp',mood('^TNX',t10.chg))} to ${fmt(t10.last,2)}%`);
-  if(j10&&j10.d1!=null&&Math.abs(j10.d1*100)>=3)F.push(`<b>Japan:</b> JGB 10y ${col((j10.d1>0?'up ':'down ')+Math.abs(j10.d1*100).toFixed(1)+' bp',-Math.sign(j10.d1))} to ${fmt(j10.now,2)}%`);
+    if(Math.abs(ch)>=3)F.push([`<b>Curve:</b> 2s10s at ${lvl} bp${s210.now<0?' (inverted)':''}; ${col((ch>0?'steepened ':'flattened ')+Math.abs(ch).toFixed(0)+' bp over 1 week',dcl(ch))}`,dcl(ch)])}   // unchanged curve is not news; the tile shows the level
+  if(t10&&t10.chg!=null&&Math.abs(t10.chg*100)>=5){const k=cm('^TNX',t10.chg);F.push([`<b>Rates:</b> US 10y ${col((t10.chg>0?'up ':'down ')+Math.abs(t10.chg*100).toFixed(1)+' bp',k)} to ${fmt(t10.last,2)}%`,k])}
+  if(j10&&j10.d1!=null&&Math.abs(j10.d1*100)>=3){const k=j10.d1>0?'dn':'up';F.push([`<b>Japan:</b> JGB 10y ${col((j10.d1>0?'up ':'down ')+Math.abs(j10.d1*100).toFixed(1)+' bp',k)} to ${fmt(j10.now,2)}%`,k])}
   const spx=q('^GSPC'),rsp=q('RSP');
-  if(spx&&rsp&&spx.pct!=null&&rsp.pct!=null){const df=rsp.pct-spx.pct;if(Math.abs(df)>=0.3)F.push(`<b>Breadth:</b> ${col(df>0?'broad participation – equal-weight beating cap-weight':'narrow – mega-caps leading equal-weight',df>0?1:-1)} (${df>0?'+':''}${df.toFixed(2)}%)`)}
-  const hyg=q('HYG');if(hyg&&hyg.pct!=null&&Math.abs(hyg.pct)>=0.4)F.push(`<b>Credit:</b> high-yield bonds ${col(hyg.pct>0?'firm':'weak',hyg.pct>0?1:-1)} (HYG ${pc(hyg.pct)})`);
-  [['CL=F','Oil'],['GC=F','Gold'],['HG=F','Copper'],['NG=F','Nat gas']].forEach(([s,n])=>{const r=q(s);if(r&&r.pct!=null&&Math.abs(r.pct)>=2)F.push(`<b>${n}:</b> ${col(pc(r.pct),mood(s,r.pct))} to ${fmt(r.last,2)}`)});
-  const dx=q('DX-Y.NYB');if(dx&&dx.pct!=null&&Math.abs(dx.pct)>=0.5)F.push(`<b>Dollar:</b> ${col((dx.pct>0?'stronger':'weaker')+` (${pc(dx.pct)})`,mood('DX-Y.NYB',dx.pct))}`);
-  if(!F.length)F.push('Nothing unusual on the numbers today.');
+  if(spx&&rsp&&spx.pct!=null&&rsp.pct!=null){const df=rsp.pct-spx.pct;if(Math.abs(df)>=0.3){const k=df>0?'up':'dn';F.push([`<b>Breadth:</b> ${col(df>0?'broad participation – equal-weight beating cap-weight':'narrow – mega-caps leading equal-weight',k)} (${df>0?'+':''}${df.toFixed(2)}%)`,k])}}
+  const hyg=q('HYG');if(hyg&&hyg.pct!=null&&Math.abs(hyg.pct)>=0.4){const k=cm('HYG',hyg.pct);F.push([`<b>Credit:</b> high-yield bonds ${col(hyg.pct>0?'firm':'weak',k)} (HYG ${pc(hyg.pct)})`,k])}
+  [['CL=F','Oil'],['GC=F','Gold'],['HG=F','Copper'],['NG=F','Nat gas']].forEach(([s,n])=>{const r=q(s);if(r&&r.pct!=null&&Math.abs(r.pct)>=2){const k=cm(s,r.pct);F.push([`<b>${n}:</b> ${col(pc(r.pct),k)} to ${fmt(r.last,2)}`,k])}});
+  const dx=q('DX-Y.NYB');if(dx&&dx.pct!=null&&Math.abs(dx.pct)>=0.5){const k=cm('DX-Y.NYB',dx.pct);F.push([`<b>Dollar:</b> ${col((dx.pct>0?'stronger':'weaker')+` (${pc(dx.pct)})`,k)}`,k])}
+  if(!F.length)F.push(['Nothing unusual on the numbers today.','flat']);
 
   const sec=(d.sections['Sectors (SPDR ETFs)']||[]).slice().sort((a,b)=>b.pct-a.pct);
-  const chip=r=>`<span class="chip ${mc(mood(r.symbol,r.pct))}">${arrow(r.pct)}${r.label} ${pc(r.pct)}</span>`;
+  const chip=r=>`<span class="chip ${cm(r.symbol,r.pct)}">${arrow(r.pct)}${r.label} ${pc(r.pct)}</span>`;
   const sectors=sec.length>=6?`<div class="sub">Leaders</div><div class="chips">${sec.slice(0,3).map(chip).join('')}</div><div class="sub">Laggards</div><div class="chips">${sec.slice(-3).reverse().map(chip).join('')}</div>`:'';
   const seen=new Set();
   const mm=all.filter(r=>r.pct!=null&&Math.abs(r.pct)>=2&&!seen.has(r.label)&&seen.add(r.label)).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,8);
@@ -224,9 +239,9 @@ function snapshot(d){
   return `<section id="snapshot" class="wide">
    <div class="snap-head"><h2>Morning snapshot</h2><span class="tone ${tone[1]}">${tone[1]==='up'?'▲ ':tone[1]==='dn'?'▼ ':'● '}${tone[0]}</span><span class="note">Auto-generated from fixed rules on the data below, not AI</span></div>
    <div class="tiles">${tiles}</div>
-   <div class="note" style="margin:-6px 0 12px"><span class="up">Green</span> = good for markets (stocks up, VIX down, yields down, dollar weaker, credit firmer) · <span class="dn">red</span> = bad for markets · grey = no clear read (oil, gold, FX pairs, curve). Arrows show the direction of the move.</div>
+   <div class="note" style="margin:-6px 0 12px"><span class="up">Green</span> = good for markets (stocks up, VIX down, yields down, dollar weaker, credit firmer) · <span class="dn">red</span> = bad for markets · <span class="bu">blue ▲</span> / <span class="am">amber ▼</span> = direction only, where there is no clear market read (oil, gold, FX pairs, curve). Arrows show the direction of the move.</div>
    <div class="snap-grid">
-     <div><h3>What stands out</h3><ul class="flags">${F.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+     <div><h3>What stands out</h3><ul class="flags">${F.map(([x,k])=>`<li class="${k}">${x}</li>`).join('')}</ul></div>
      <div><h3>Where the action is</h3>${sectors}${movers}</div>
    </div>
    ${hl?`<h3>Top headlines</h3><ul class="hl news">${hl}</ul>`:''}
