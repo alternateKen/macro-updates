@@ -61,6 +61,16 @@ h3{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05e
 .hl{margin:0;padding:0}
 
 .bu{color:var(--bu)}.am{color:var(--am)}
+.mvgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:10px;margin-bottom:8px}
+.mvcard{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.mvh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px}
+.mvh span{font-size:11px;color:var(--mute);white-space:nowrap}
+.mvr{display:grid;grid-template-columns:minmax(90px,1.2fr) 1fr 66px;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
+.mvn{line-height:1.15;min-width:0}.mvn b{font-weight:600;font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mvn small{display:block;color:var(--mute);font-size:10px}
+.mvbar{position:relative;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.mvbar i{position:absolute;left:0;top:0;bottom:0;border-radius:0 4px 4px 0}.mvbar i.up{background:var(--up)}.mvbar i.dn{background:var(--dn)}
+.mvp{text-align:right;font-size:12px;font-weight:600}
 tr.grp td{padding:10px 6px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:600;border-top:1px solid var(--line);text-align:left}
 .heat small{font-size:10px}
 .tone.mu{color:var(--am);border-color:var(--am)}
@@ -116,7 +126,7 @@ function heat(rows,id='sectors',title='Sector performance today (SPDR ETFs)'){
 }
 // ---- Asia-Pacific: heatmap of the headline index per market, then every index grouped by market
 const ASIA_HEAD=[['^N225','Japan'],['^KS11','Korea'],['^TWII','Taiwan'],['^HSCE','China H-shares'],['000300.SS','China A-shares'],['^STI','Singapore'],
-  ['^JKSE','Indonesia'],['^KLSE','Malaysia'],['^SET.BK','Thailand'],['^PSEI.PS','Philippines'],['VNM','Vietnam (ETF)'],['^AXJO','Australia'],['^NSEI','India']];
+  ['^JKSE','Indonesia'],['^KLSE','Malaysia'],['^SET.BK','Thailand'],['EPHE','Philippines'],['VNM','Vietnam (ETF)'],['^AXJO','Australia'],['^NSEI','India']];
 function asiaGroups(S){return Object.keys(S).filter(k=>k.startsWith('Asia: ')).map(k=>[k.slice(6),S[k]])}
 function asiaHeadRows(S){
   const all=asiaGroups(S).flatMap(([,rows])=>rows);
@@ -183,6 +193,11 @@ function briefText(d){
   d.fred.forEach(r=>L.push(`${r.label}: ${f(r.now)} | ${f(r.d1,3)} | ${f(r.w1)} | ${f(r.m1)}`));
   L.push('','## Japan JGB yields % (now | 1-day change | 1W ago | 1M ago), MOF end-of-day');
   (d.jgb||[]).forEach(r=>L.push(`${r.label}: ${f(r.now,3)} | ${f(r.d1,3)} | ${f(r.w1,3)} | ${f(r.m1,3)}`));
+  Object.entries(d.movers||{}).forEach(([name,m])=>{
+    L.push('',`## Top movers: ${name} (${m.adv} up / ${m.dec} down of ${m.loaded}; day % change, last completed session)`);
+    L.push('Gainers: '+m.gainers.map(r=>`${r.label} (${r.symbol}) ${f(r.pct,2)}%`).join('; '));
+    L.push('Losers: '+m.losers.map(r=>`${r.label} (${r.symbol}) ${f(r.pct,2)}%`).join('; '));
+  });
   L.push('','## Headlines');
   d.news.forEach(n=>L.push(`- [${n.source}] ${n.title}`));
   return L.join('\n');
@@ -204,6 +219,23 @@ const NO_READ=new Set(['CL=F','BZ=F','NG=F','RB=F','GC=F','SI=F','PL=F','ZC=F','
 const dcl=v=>v==null||v===0?'flat':v>0?'bu':'am';                       // direction-only colour
 const cm=(sym,v)=>v==null||v===0?'flat':NO_READ.has(sym)?dcl(v):((HIGHER_BAD.has(sym)?-v:v)>0?'up':'dn');
 const col=(txt,c)=>`<span class="${c}">${txt}</span>`;
+// Top movers: five biggest gainers and losers for each stock universe in movers.txt
+function moversBlock(d){
+  const M=d.movers;
+  if(!M||!Object.keys(M).length)return '';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const card=(name,m)=>{
+    const rows=[...m.gainers,...m.losers];
+    const sc=Math.max(1,...rows.map(r=>Math.abs(r.pct)));
+    const row=r=>{const k=r.pct>0?'up':r.pct<0?'dn':'';const w=Math.max(2,Math.min(100,Math.abs(r.pct)/sc*100));
+      return `<div class="mvr"><div class="mvn"><b>${esc(r.label)}</b><small>${esc(r.symbol)}</small></div><div class="mvbar"><i class="${k}" style="width:${w}%"></i></div><div class="mvp ${k}">${arrow(r.pct)}${pc(r.pct)}</div></div>`};
+    const arrow=v=>v>0?'▲ ':v<0?'▼ ':'';
+    return `<div class="mvcard"><div class="mvh"><b>${esc(name)}</b><span>${m.adv} up · ${m.dec} down${m.loaded<m.n?` · ${m.loaded}/${m.n} loaded`:''}</span></div>
+      <div class="sub">Top gainers</div>${m.gainers.map(row).join('')}<div class="sub">Top losers</div>${m.losers.map(row).join('')}</div>`;
+  };
+  return `<h3>Top movers (last completed session)</h3><div class="mvgrid">${Object.entries(M).map(([n,m])=>card(n,m)).join('')}</div>
+    <div class="note">US lists are the live index members; Asian lists are curated large caps from movers.txt. US figures from the pre-market run are yesterday's session; Asian figures are the latest close.</div>`;
+}
 function snapshot(d){
   const all=Object.values(d.sections).flat();
   const q=sym=>all.find(r=>r.symbol===sym);
@@ -275,6 +307,7 @@ function snapshot(d){
      <div><h3>What stands out</h3><ul class="flags">${F.map(([x,k])=>`<li class="${k}">${x}</li>`).join('')}</ul></div>
      <div><h3>Where the action is</h3>${sectors}${movers}</div>
    </div>
+   ${moversBlock(d)}
    ${hl?`<h3>Top headlines</h3><ul class="hl news">${hl}</ul>`:''}
   </section>`;
 }

@@ -4,6 +4,7 @@ import csv, io, json, os, re, sys, time, urllib.request, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
       "Accept": "text/csv,application/json,text/html;q=0.9,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.9"}
@@ -15,14 +16,14 @@ YAHOO = {
     "Europe Indices": [("^FTSE", "FTSE 100"), ("^STOXX50E", "Euro Stoxx 50"), ("^GDAXI", "DAX"), ("^FCHI", "CAC 40")],
     # Asia-Pacific: every key starting "Asia: " is shown together on the page, grouped by market.
     # These have all closed by the 6:15am New York refresh, so the figures are the final session.
-    "Asia: Japan": [("^N225", "Nikkei 225"), ("^TOPX", "TOPIX")],
+    "Asia: Japan": [("^N225", "Nikkei 225"), ("1306.T", "TOPIX (NEXT FUNDS ETF)")],
     "Asia: Korea": [("^KS11", "KOSPI"), ("^KQ11", "KOSDAQ")],
     "Asia: Taiwan": [("^TWII", "TAIEX")],
-    "Asia: China H-shares": [("^HSI", "Hang Seng"), ("^HSCE", "HS China Enterprises (H-shares)"), ("^HSTECH", "Hang Seng Tech")],
+    "Asia: China H-shares": [("^HSI", "Hang Seng"), ("^HSCE", "HS China Enterprises (H-shares)"), ("3032.HK", "Hang Seng Tech (ETF 3032)")],
     "Asia: China A-shares": [("000001.SS", "Shanghai Composite"), ("399001.SZ", "Shenzhen Component"), ("000300.SS", "CSI 300"), ("399006.SZ", "ChiNext")],
     "Asia: Singapore": [("^STI", "Straits Times")],
     "Asia: Southeast Asia": [("^JKSE", "Indonesia (Jakarta Comp)"), ("^KLSE", "Malaysia (KLCI)"), ("^SET.BK", "Thailand (SET)"),
-                             ("^PSEI.PS", "Philippines (PSEi)"), ("VNM", "Vietnam (VanEck ETF)")],
+                             ("EPHE", "Philippines (iShares ETF)"), ("VNM", "Vietnam (VanEck ETF)")],
     "Asia: Australia": [("^AXJO", "ASX 200"), ("^AORD", "All Ordinaries")],
     "Asia: India": [("^NSEI", "Nifty 50"), ("^BSESN", "Sensex"), ("^NSEBANK", "Nifty Bank")],
     "Asia FX": [("KRW=X", "USD/KRW"), ("TWD=X", "USD/TWD"), ("CNH=X", "USD/CNH"), ("INR=X", "USD/INR"), ("SGD=X", "USD/SGD"),
@@ -256,8 +257,179 @@ def news(name, url, limit=8):
     return items
 
 
+# ---------------- Top movers (Dow, S&P 500, Nasdaq-100, China H/A, Taiwan, Korea) ----------------
+# Bloomberg country suffix -> Yahoo suffixes to try in order (Taiwan: main board .TW or OTC board .TWO;
+# Korea: KOSPI .KS or KOSDAQ .KQ)
+BBG_SUFFIX = {"TT": [".TW", ".TWO"], "KS": [".KS", ".KQ"], "JP": [".T"], "HK": [".HK"], "NO": [".OL"], "LN": [".L"]}
+US_SUFFIX = ("US", "UN", "UQ", "UW", "UA")
+DOW_FALLBACK = ["AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "GS", "HD", "HON", "IBM", "JNJ",
+                "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "NVDA", "PG", "SHW", "TRV", "UNH", "V", "VZ", "WMT"]
+
+
+def yahoo_candidates(code):
+    """'SHOP US' -> ['SHOP'];  '2330 TT' -> ['2330.TW', '2330.TWO'];  '0700 HK' -> ['0700.HK'];  '600519 CH' -> ['600519.SS']"""
+    code = code.strip().upper()
+    m = re.match(r"^(.+?)\s+([A-Z]{2})$", code)
+    if not m:
+        return [code.replace("/", "-").replace(" ", "")]
+    base, cc = m.group(1).replace(" ", "").replace("/", "-"), m.group(2)
+    if cc in US_SUFFIX:
+        return [base]
+    if cc == "CH":   # mainland China: 6xxxxx = Shanghai, otherwise Shenzhen
+        return [base + (".SS" if base.startswith("6") else ".SZ")]
+    if cc == "HK":
+        base = base.lstrip("0").zfill(4)
+    return [base + x for x in BBG_SUFFIX.get(cc, [""])]
+
+
+class TableById(HTMLParser):
+    """Collects the rows of one HTML table, found by its id (Wikipedia member tables use id="constituents")."""
+    def __init__(self, tid):
+        super().__init__()
+        self.tid, self.depth, self.on, self.rows, self.row, self.cell = tid, 0, False, [], None, None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "table":
+            if self.on:
+                self.depth += 1
+            elif a.get("id") == self.tid:
+                self.on, self.depth = True, 1
+        elif self.on and tag == "tr":
+            self.row = []
+        elif self.on and tag in ("td", "th") and self.row is not None:
+            self.cell = []
+        elif self.on and tag == "br" and self.cell is not None:
+            self.cell.append(" ")
+
+    def handle_endtag(self, tag):
+        if not self.on:
+            return
+        if tag == "table":
+            self.depth -= 1
+            if self.depth == 0:
+                self.on = False
+        elif tag in ("td", "th") and self.cell is not None and self.row is not None:
+            self.row.append(" ".join("".join(self.cell).split()))
+            self.cell = None
+        elif tag == "tr" and self.row is not None:
+            if self.row:
+                self.rows.append(self.row)
+            self.row = None
+
+    def handle_data(self, d):
+        if self.on and self.cell is not None:
+            self.cell.append(d)
+
+
+def wikipedia_members(url):
+    """-> [(yahoo symbol, company name)] from the 'constituents' table of a Wikipedia index page."""
+    p = TableById("constituents")
+    p.feed(get(url, tries=2, timeout=25).decode("utf-8", "ignore"))
+    if len(p.rows) < 5:
+        raise ValueError("members table not found on page")
+    head = [re.sub(r"\[.*?\]", "", h).strip().lower() for h in p.rows[0]]
+    si = next((i for i, h in enumerate(head) if h in ("symbol", "ticker")), None)
+    ni = next((i for i, h in enumerate(head) if h in ("security", "company", "name")), None)
+    if si is None:
+        raise ValueError("no Symbol column in members table")
+    out = []
+    for r in p.rows[1:]:
+        if len(r) <= si:
+            continue
+        sym = re.sub(r"\[.*?\]", "", r[si]).split(":")[-1].strip().upper().replace(".", "-")
+        if re.match(r"^[A-Z][A-Z0-9-]{0,6}$", sym):
+            out.append((sym, re.sub(r"\[.*?\]", "", r[ni]).strip() if ni is not None and len(r) > ni else sym))
+    return out
+
+
+def read_movers(path):
+    """movers.txt -> [{"name": universe, "wiki": url or None, "items": [(candidates, name, display)]}]"""
+    unis, cur = [], None
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.split("#")[0].strip() if not line.strip().startswith("@") else line.strip()
+            if not line:
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                cur = {"name": line[1:-1].strip(), "wiki": None, "items": []}
+                unis.append(cur)
+            elif cur is None:
+                continue
+            elif line.lower().startswith("@wikipedia"):
+                cur["wiki"] = line.split(None, 1)[1].strip()
+            else:
+                code, _, name = line.partition("|")
+                if code.strip():
+                    cands = yahoo_candidates(code)
+                    cur["items"].append((cands, name.strip() or code.strip(), code.strip().upper().replace(" US", "")))
+    return unis
+
+
+def quick_quote(cands, deadline):
+    """Last price and day % change from a small 5-day Yahoo request. Tries each candidate symbol in turn."""
+    last_err = None
+    for sym in cands:
+        try:
+            if time.time() > deadline:
+                raise TimeoutError("movers time budget used")
+            raw = get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range=5d&interval=1d", tries=2, timeout=10)
+            res = json.loads(raw)["chart"]["result"][0]
+            closes = [c for c in res["indicators"]["quote"][0]["close"] if c is not None]
+            if len(closes) < 2:
+                raise ValueError("no previous close")
+            last = res["meta"].get("regularMarketPrice") or closes[-1]
+            return {"ysym": sym, "last": last, "pct": (last / closes[-2] - 1) * 100}
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+    raise last_err
+
+
+def build_movers(path, errors, budget_seconds=240, top=5):
+    deadline = time.time() + budget_seconds
+    unis = read_movers(path)
+    for u in unis:   # live US index members
+        if u["wiki"]:
+            try:
+                u["items"] = [([s], n, s) for s, n in wikipedia_members(u["wiki"])]
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"movers {u['name']}: Wikipedia list failed ({e})")
+                if u["name"].startswith("Dow"):
+                    u["items"] = [([s], s, s) for s in DOW_FALLBACK]
+                    errors.append("movers Dow 30: used built-in fallback list")
+    cache, jobs = {}, []
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        for u in unis:
+            for cands, name, disp in u["items"]:
+                key = tuple(cands)
+                if key not in cache:   # a stock in several universes is fetched once
+                    cache[key] = ex.submit(quick_quote, cands, deadline)
+                jobs.append((u["name"], name, disp, cache[key]))
+        by = {u["name"]: [] for u in unis}
+        failed = {u["name"]: [] for u in unis}
+        for uname, name, disp, fu in jobs:
+            try:
+                q = fu.result()
+                by[uname].append({"symbol": disp, "label": name, "pct": q["pct"], "last": q["last"]})
+            except Exception:  # noqa: BLE001
+                failed[uname].append(disp)
+    out = {}
+    for u in unis:
+        rows = by[u["name"]]
+        total = len(u["items"])
+        if failed[u["name"]]:
+            errors.append(f"movers {u['name']}: {len(rows)}/{total} loaded; no data for {', '.join(failed[u['name']][:8])}"
+                          + (" ..." if len(failed[u["name"]]) > 8 else ""))
+        if len(rows) < max(5, total // 2):
+            continue   # too little data to call anything a top mover
+        rows.sort(key=lambda r: r["pct"], reverse=True)
+        out[u["name"]] = {"n": total, "loaded": len(rows), "adv": sum(1 for r in rows if r["pct"] > 0), "dec": sum(1 for r in rows if r["pct"] < 0),
+                          "gainers": rows[:top], "losers": rows[-top:][::-1]}
+    return out
+
+
 def main():
-    out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "jgb": [], "news": [], "errors": []}
+    out = {"generated": datetime.now(timezone.utc).isoformat(), "sections": {}, "curve": [], "fred": [], "jgb": [], "movers": {}, "news": [], "errors": []}
 
     def safe(fn, *a):
         try:
@@ -332,6 +504,12 @@ def main():
                 out["errors"].append("news " + err)
             else:
                 out["news"].extend(r)
+    try:
+        mv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "movers.txt")
+        if os.path.exists(mv):
+            out["movers"] = build_movers(mv, out["errors"])
+    except Exception as e:  # noqa: BLE001
+        out["errors"].append(f"movers: {e}")
     total = sum(len(v) for v in out["sections"].values())
     if total == 0 and not out["curve"]:
         print("No data fetched at all; keeping previous data.json", file=sys.stderr)
