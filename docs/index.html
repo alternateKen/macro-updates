@@ -183,6 +183,25 @@ function newsBlock(items){
   const li=items.map(n=>`<li><span class="src">${n.source}</span><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></li>`).join('');
   return `<section id="news" class="news"><h2>Headlines</h2><ul>${li}</ul></section>`;
 }
+// ---- data freshness: when was the data generated, and does it include the last US close?
+function etParts(t){const o={};new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',weekday:'short',hourCycle:'h23'}).formatToParts(new Date(t)).forEach(x=>o[x.type]=x.value);return o}
+function etWall(y,m,d,hh,mm){   // the UTC instant at which the New York wall clock reads y-m-d hh:mm
+  let g=Date.UTC(y,m-1,d,hh+4,mm);
+  for(let i=0;i<3;i++){const o=etParts(g),diff=Date.UTC(+o.year,+o.month-1,+o.day,+o.hour,+o.minute)-Date.UTC(y,m-1,d,hh,mm);if(!diff)break;g-=diff}
+  return g;
+}
+function lastUSClose(now){   // most recent weekday 4:00pm New York at or before now (exchange holidays are not modelled)
+  for(let back=0;back<6;back++){const o=etParts(now-back*864e5);if(o.weekday==='Sat'||o.weekday==='Sun')continue;
+    const c=etWall(+o.year,+o.month,+o.day,16,0);if(c<=now)return c}
+  return null;
+}
+const etStr=t=>new Date(t).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})+' ET';
+function ageText(ms){const m=Math.round(ms/6e4);return m<90?`${m} min`:`${(m/60).toFixed(1)} hours`}
+function freshness(d){
+  const gen=new Date(d.generated).getTime(),now=Date.now(),close=lastUSClose(now);
+  const includes=close!=null&&gen>=close+15*6e4;      // Yahoo's closing prints are final within ~15 minutes
+  return {gen,now,close,includes,stale:close!=null&&!includes&&now>=close+45*6e4};
+}
 function briefText(d){
   const L=[];const f=(v,x=2)=>v==null?'n/a':v.toFixed(x);const p=v=>v==null?'n/a':(v>0?'+':'')+v.toFixed(2)+'%';
   L.push('You are my macro strategist. I am an equity fund manager and trader. Using ONLY the data below (do not invent or assume any numbers), write my morning macro brief:');
@@ -193,6 +212,11 @@ function briefText(d){
   L.push('5. Cross-asset consistency: where do the signals agree or disagree? What looks odd?');
   L.push('6. Levels and risks to watch today, including any US data releases or Fed speakers from the headlines.');
   L.push('Be concise, use short bullets, and say clearly where data is end-of-day (Treasury, MOF, FRED) rather than live.');
+  const fr=freshness(d);
+  L.push('','DATA FRESHNESS (read this before judging whether the data is stale):');
+  L.push(`- Data generated ${etStr(fr.gen)}; this brief was copied ${etStr(fr.now)} (${ageText(fr.now-fr.gen)} later).`);
+  if(fr.close!=null)L.push(`- Last US cash close: ${etStr(fr.close)}. The data ${fr.includes?'INCLUDES the final closing prints for that session':'was generated BEFORE that close, so US equity figures are from an earlier point and exclude it'}.`);
+  L.push('- Before the open, US index/stock figures are the last completed session. Futures, FX and crypto are live to within about 15 minutes of generation. US Treasury yields are end-of-day and can lag by a day. Asian markets are their latest close. Bloomberg items carry their own as-of dates.');
   L.push('','DATA (generated '+d.generated+')');
   for(const [sec,rows] of Object.entries(d.sections)){
     L.push('','## '+sec);
@@ -491,8 +515,11 @@ const notes=`<section id="notes"><h2>My notes for today (saved only in this brow
 function render(d){
   const S=d.sections;
   const gen=new Date(d.generated);
-  document.getElementById('stamp').textContent='Data refreshed '+gen.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'})+' · Yahoo Finance · US Treasury · NY Fed · Japan MOF · FRED · RSS';
+  document.getElementById('stamp').textContent='Data refreshed '+etStr(gen)+' ('+gen.toLocaleString([], {hour:'2-digit',minute:'2-digit',timeZoneName:'short'})+' your time) · Yahoo Finance · US Treasury · NY Fed · Japan MOF · FRED · RSS';
   const age=(Date.now()-gen)/36e5;
+  const fr=freshness(d);
+  if(fr.stale&&age<=30){const b=document.getElementById('banner');b.style.display='block';b.style.borderColor='var(--am)';b.style.color='var(--am)';
+    b.textContent=`This data was generated ${etStr(fr.gen)}, before the last US close (${etStr(fr.close)}), so US figures exclude that close. The after-close refresh is late (GitHub sometimes starts scheduled runs hours late). Press Run workflow on the repository's Actions tab for an immediate refresh.`}
   if(age>30){const b=document.getElementById('banner');b.style.display='block';b.textContent=`Warning: this data is ${Math.round(age)} hours old. The automatic refresh may have failed (check the Actions tab in GitHub).`}
   const parts=[
     snapshot(d),quoteTable('Futures',S['Futures']),quoteTable('US Indices',S['US Indices']),

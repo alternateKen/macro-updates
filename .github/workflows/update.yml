@@ -2,15 +2,18 @@ name: Update macro dashboard
 
 on:
   schedule:
-    # Three runs a day on weekdays. GitHub cron is UTC only and ignores daylight saving, so the two US
-    # times are listed twice (summer + winter) and the "gate" job below keeps only the one that is
-    # really ~6:15am or ~4:45pm New York time.
-    #   1) pre-market, ~6:15am New York      10:15 UTC in US summer time, 11:15 UTC in US winter time
-    #   2) after the US close, ~4:45pm NY    20:45 UTC in US summer time, 21:45 UTC in US winter time
-    #   3) after the Asian close, 10:30 UTC  (India closes last, 10:00 UTC; Asia has no daylight saving)
-    - cron: "15 10,11 * * 1-5"
-    - cron: "45 20,21 * * 1-5"
+    # Weekdays. GitHub starts scheduled runs LATE, sometimes by several hours (2h40m to 7h seen on this repo), so
+    # a late run must still build: there is no clock check any more. GitHub cron is UTC only and ignores US
+    # daylight saving, so the pre-market run is listed for both seasons; the one that is off by an hour is a harmless extra refresh.
+    #   1) pre-market, 6:15am New York     10:15 UTC (US summer time) and 11:15 UTC (US winter time)
+    #   2) after the Asian close           10:30 UTC all year (India closes last, 10:00 UTC; Asia has no daylight saving)
+    #   3) after the US close              21:45 UTC = 5:45pm New York in summer, 4:45pm in winter (always after the 4:00pm close)
+    #      22:45 UTC backup, also picks up Treasury yields that are posted late in the evening
+    - cron: "15 10 * * 1-5"
+    - cron: "15 11 * * 1-5"
     - cron: "30 10 * * 1-5"
+    - cron: "45 21 * * 1-5"
+    - cron: "45 22 * * 1-5"
   workflow_dispatch: {}   # lets you press "Run workflow" for an on-demand refresh
   push:
     branches: [main]
@@ -23,29 +26,10 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      go: ${{ steps.g.outputs.go }}
-    steps:
-      - id: g
-        env:
-          EVENT: ${{ github.event_name }}
-          SCHED: ${{ github.event.schedule }}
-        run: |
-          H=$(TZ=America/New_York date +%-H)
-          echo "New York hour is $H, event is $EVENT, schedule is '$SCHED'"
-          if [ "$EVENT" != "schedule" ] || [ "$SCHED" = "30 10 * * 1-5" ] || [ "$H" = "6" ] || [ "$H" = "16" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          fi
   build:
-    needs: gate
-    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 14
     steps:
