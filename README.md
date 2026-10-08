@@ -20,11 +20,13 @@ Files: `scripts/fetch_data.py` (collects data), `docs/index.html` (the page), `.
 To add a ticker, edit the `YAHOO` list at the top of `fetch_data.py`.
 
 ## Refresh times (weekdays)
-1. **Pre-market:** about 6:15am New York time (10:15 UTC in US summer time, 11:15 UTC in US winter time).
-2. **After the US close:** about 4:45pm New York time (20:45 UTC in summer, 21:45 UTC in winter).
-3. **After the Asian close:** 10:30 UTC every weekday (India closes last, at 10:00 UTC). That is 6:30pm Hong Kong and Singapore, 7:30pm Tokyo and Seoul, 4:00pm India.
+1. **Pre-market, 6:15am New York:** 10:15 UTC in US summer time and 11:15 UTC in US winter time (both are scheduled; the one an hour off is a harmless extra refresh).
+2. **After the Asian close:** 10:30 UTC all year (India closes last, at 10:00 UTC). That is 6:30pm Hong Kong and Singapore, 7:30pm Tokyo and Seoul, 4:00pm India.
+3. **After the US close:** 21:45 UTC (5:45pm New York in summer, 4:45pm in winter, always after the 4:00pm close), with a 22:45 UTC backup that also picks up Treasury yields posted late.
 
-GitHub can start a scheduled run a few minutes late. You can also press **Run workflow** on the Actions tab at any time.
+GitHub often starts scheduled runs late, sometimes by several hours, and occasionally skips one. A late run still builds (there is no clock check), runs never cancel each other,
+and the page shows an amber warning when its data pre-dates the last US close. The "Copy brief for Claude" text begins with a freshness block (when the data was generated,
+whether it includes the last close) so Claude can judge staleness correctly. You can also press **Run workflow** on the Actions tab at any time.
 
 ## Top movers (ranked by impact on the index)
 The morning snapshot ranks stocks by their **contribution to the index move** (weight in the index x day move), for the Dow 30, S&P 500,
