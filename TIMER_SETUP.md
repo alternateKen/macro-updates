@@ -25,9 +25,9 @@ product. Any other timer service that can send an HTTP POST with headers works w
 
 | Field | Value |
 |---|---|
-| Title | `macro pre-market 10:15 UTC` |
+| Title | `macro pre-market` |
 | URL | `https://api.github.com/repos/alternateKen/macro-updates/actions/workflows/update.yml/dispatches` |
-| Execution schedule | custom (see the table in step 4). **Set the time zone of the job to UTC** |
+| Execution schedule | Custom, and the job's time zone: see step 4 |
 | **Advanced** tab, Request method | `POST` |
 | **Advanced** tab, Request body | `{"ref":"main"}` |
 | **Advanced** tab, Headers (add four) | `Authorization` = `Bearer github_pat_...your token...` |
@@ -38,26 +38,41 @@ product. Any other timer service that can send an HTTP POST with headers works w
 
 3. Press **Test run** (or **Create** then **Test run** from the job's page). A good result is **HTTP 204**. Then open your repository's **Actions** tab:
    a new run named "Update macro dashboard" with the event **workflow_dispatch** should appear and finish in 1 to 2 minutes.
-4. Use **Duplicate** on that job for each row below (change only the Title, the schedule and, for the watchlist, the repository name in the URL).
-   Days are Monday to Friday. Times are UTC.
+4. **Choose the job's time zone first, then the schedule.** Each job has its own time zone (the "Next executions" box says which, for example
+   "In this job's individual timezone (Asia/Kuala_Lumpur)"). The easiest, daylight-saving-proof setup is to give each job the time zone of the
+   market it follows, so you type the clock time you actually want:
+   - US jobs: set the job's time zone to **America/New_York** (it then handles summer and winter time by itself).
+   - The Asian-close job: leave it on **Asia/Kuala_Lumpur** (same as Hong Kong and Singapore, UTC+8, no daylight saving).
+   Change the time zone **before** filling in the schedule, because the picked hours are read in that zone. Always confirm with the
+   **Next executions** box on the right: it must show the clock times and weekdays in the table below.
+5. Use **Duplicate** on that job for each row below and change only the Title, the time zone, the schedule and, for the watchlist, the repository name in the URL.
 
-| Job | URL repository | Time (UTC) | In New York | In Hong Kong |
-|---|---|---|---|---|
-| macro pre-market A | `macro-updates` | 10:15 | 6:15am in US summer time | 6:15pm |
-| macro pre-market B | `macro-updates` | 11:15 | 6:15am in US winter time | 7:15pm |
-| macro after Asian close | `macro-updates` | 10:30 | 6:30am summer, 5:30am winter | 6:30pm |
-| macro after US close | `macro-updates` | 21:45 | 5:45pm summer, 4:45pm winter | 5:45am next day |
-| macro after US close backup | `macro-updates` | 22:45 | 6:45pm summer, 5:45pm winter | 6:45am next day |
-| watchlist pre-market A | `agentic-watchlist` | 10:15 | 6:15am in summer | 6:15pm |
-| watchlist pre-market B | `agentic-watchlist` | 11:15 | 6:15am in winter | 7:15pm |
-| watchlist market hours | `agentic-watchlist` | every 30 minutes from 13:00 to 21:30 | 9:00am to 5:30pm summer, 8:00am to 4:30pm winter | 9:00pm to 5:30am |
+| Job | URL repository | Job time zone | Weekdays | Hours | Minutes | Crontab to expect |
+|---|---|---|---|---|---|---|
+| macro pre-market | `macro-updates` | America/New_York | Mon to Fri | 6 | 15 | `15 6 * * 1-5` |
+| macro after Asian close | `macro-updates` | Asia/Kuala_Lumpur | Mon to Fri | 18 | 30 | `30 18 * * 1-5` |
+| macro after US close | `macro-updates` | America/New_York | Mon to Fri | 16 | 45 | `45 16 * * 1-5` |
+| macro after US close backup | `macro-updates` | America/New_York | Mon to Fri | 18 | 15 | `15 18 * * 1-5` |
+| watchlist pre-market | `agentic-watchlist` | America/New_York | Mon to Fri | 6 | 15 | `15 6 * * 1-5` |
+| watchlist market hours | `agentic-watchlist` | America/New_York | Mon to Fri | 9, 10, 11, 12, 13, 14, 15, 16 | 0 and 30 | `0,30 9-16 * * 1-5` |
 
-   For the "market hours" job choose **hours 13 to 21** and **minutes 0 and 30**.
-   One of the two pre-market jobs is always an hour off from 6:15am in New York. That is on purpose (it avoids depending on a daylight-saving
-   setting) and costs nothing: it is just one extra refresh.
+   **How to fill the Custom schedule box** (the five lists under "Custom"):
+   - **Days of month:** leave every day selected. **Months:** leave every month selected.
+   - **Days of week:** select **Monday to Friday only**. Click Monday, hold Shift and click Friday. If Saturday or Sunday stay highlighted,
+     click them once to switch them off.
+   - **Hours** and **Minutes:** click the first value, then hold **Ctrl** (Windows) or **Cmd** (Mac) and click each further value.
+     For a single value, click only that one. First clear any highlighted values you do not want.
+   - Check the **Crontab expression** box under the lists against the last column above. If it shows a different time, the lists are wrong.
+   - The lists can look out of date after switching from "Every 15 minutes" to Custom, so do not trust their grey highlighting: trust the
+     crontab expression and the Next executions box.
+
+   **If you would rather use UTC** (set the job's time zone to UTC): pre-market `15 10 * * 1-5` **and** `15 11 * * 1-5` (one is 6:15am in New York in summer, the
+   other in winter), Asian close `30 10 * * 1-5`, after US close `45 21 * * 1-5` plus backup `45 22 * * 1-5`, watchlist market hours `0,30 13-21 * * 1-5`.
+   Do not mix: the same time typed under a different time zone runs at a different moment, and times on the other side of midnight shift the weekday
+   (for example 21:45 UTC is 05:45 the next morning in Kuala Lumpur, so Monday to Friday there would run Tuesday to Saturday).
 
 ## Part C: check it works
-- Next morning the **Actions** tab should show a run at about 10:15 or 11:15 UTC (6:15am in New York) with the event **workflow_dispatch**.
+- Next morning the **Actions** tab should show a run at about 6:15am New York time (10:15 or 11:15 UTC) with the event **workflow_dispatch**.
   The page's "Data refreshed" time and the first lines of the "Copy brief for Claude" text will show the new time.
 - cron-job.org keeps a history for each job. A failure also emails you.
 
