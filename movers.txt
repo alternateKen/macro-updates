@@ -9,7 +9,7 @@
 #   3. If neither is available the card says "Unweighted % move".
 #
 # [Name]                      starts a universe (one "Top movers" card)
-# @index SYMBOL               Yahoo symbol of the index, shown for comparison
+# @index SYMBOL[,ALT,...]    Yahoo symbol of the index, shown for comparison (alternatives are tried in order)
 # @weights weights/file.csv   optional Bloomberg weights file for this universe (if the file exists it also replaces the stock list)
 # @weighting price            only for price-weighted indices (Dow)
 # @wikipedia <page address>   loads the index members live from Wikipedia each run (US indices)
@@ -80,7 +80,7 @@
 1109 HK | China Resources Land
 
 [China A-shares]
-@index 000300.SS
+@index 000300.SS,399300.SZ
 @weights weights/ashares.csv
 600519 CH | Kweichow Moutai
 300750 CH | CATL
