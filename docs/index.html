@@ -230,7 +230,7 @@ function briefText(d){
   (d.jgb||[]).forEach(r=>L.push(`${r.label}: ${f(r.now,3)} | ${f(r.d1,3)} | ${f(r.w1,3)} | ${f(r.m1,3)}`));
   Object.entries(d.movers||{}).forEach(([name,m])=>{
     const u=m.unit,fv=r=>u==='bp'?f(r.c,1)+' bp':u==='pts'?f(r.c,1)+' pts':f(r.c,2)+'%';
-    L.push('',`## Top movers: ${name} (${m.method}; ranked by contribution to the index move; ${m.adv} up / ${m.dec} down of ${m.loaded}${m.index?`; index ${f(m.index.pct,2)}%`:''})`);
+    L.push('',`## Top movers: ${name} (${m.method}; ranked by contribution to the index move; ${m.adv} up / ${m.dec} down of ${m.loaded}${m.index?`; index ${f(m.index.pct,2)}%`:''}; prices as of ${m.asof?etStr(m.asof*1000):'unknown'}, ${m.live?'INTRADAY, market was open, not a close':'at the close'}${m.members==='built-in list'?'; built-in member list':''})`);
     L.push('Positive: '+m.gainers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
     L.push('Negative: '+m.losers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
   });
@@ -387,13 +387,14 @@ function moversBlock(d){
     if(m.ret!=null)line+=`${line?' · ':''}this list, cap-weighted: <b class="${m.ret>0?'up':m.ret<0?'dn':''}">${sg(m.ret,2)}%</b>`;
     const approx=m.method.startsWith('Bloomberg')||m.method.startsWith('Price')?'':'approx';
     return `<div class="mvcard"><div class="mvh"><b>${esc(name)}</b><span>${m.adv} up · ${m.dec} down${m.loaded<m.n?` · ${m.loaded}/${m.n} loaded`:''}</span></div>
+      <div class="mvm ${m.live?'approx':''}">${m.live?'⚠ INTRADAY: market was open when this was built, not a close':'Prices at the close'}${m.asof?` · as of ${etStr(m.asof*1000)}`:''}${m.members==='built-in list'?' · built-in member list (live list unavailable)':''}</div>
       <div class="mvm ${approx}">${esc(m.method)}${m.basis==='list'?' · curated list, not the whole index':''}</div>
       ${line?`<div class="mvl">${line}</div>`:''}
       <div class="sub">Biggest positive contributors</div>${m.gainers.length?m.gainers.map(row).join(''):'<div class="empty">none</div>'}
       <div class="sub">Biggest negative contributors</div>${m.losers.length?m.losers.map(row).join(''):'<div class="empty">none</div>'}</div>`;
   };
-  return `<h3>Top movers by impact on the index (last completed session)</h3><div class="mvgrid">${Object.entries(M).map(([n,m])=>card(n,m)).join('')}</div>
-    <div class="note">Ranked by contribution to the index move = weight in the index × day move (bp of the index; index points for the price-weighted Dow). "Approx" cards use Yahoo market caps; drop Bloomberg index weights into the weights/ folder to make them exact. US figures from the pre-market run are yesterday's session; Asian figures are the latest close.</div>`;
+  return `<h3>Top movers by impact on the index</h3><div class="mvgrid">${Object.entries(M).map(([n,m])=>card(n,m)).join('')}</div>
+    <div class="note">Ranked by contribution to the index move = weight in the index × day move (bp of the index; index points for the price-weighted Dow). "Approx" cards use Yahoo market caps; drop Bloomberg index weights into the weights/ folder to make them exact. Every card shows the time its prices are as of and flags builds made while the market was open (intraday), so a mid-day refresh cannot pass as a close.</div>`;
 }
 function snapshot(d){
   const all=Object.values(d.sections).flat();

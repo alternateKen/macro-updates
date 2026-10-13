@@ -266,6 +266,16 @@ DOW_FALLBACK = ["AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX"
                 "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "NVDA", "PG", "SHW", "TRV", "UNH", "V", "VZ", "WMT"]
 
 
+NDX_FALLBACK = ["AAPL", "ABNB", "ADBE", "ADI", "ADP", "ADSK", "AEP", "AMAT", "AMD", "AMGN", "AMZN", "APP", "ARM", "ASML", "AVGO", "AXON",
+                "AZN", "BIIB", "BKNG", "BKR", "CCEP", "CDNS", "CDW", "CEG", "CHTR", "CMCSA", "COST", "CPRT", "CRWD", "CSCO", "CSGP", "CSX",
+                "CTAS", "CTSH", "DASH", "DDOG", "DXCM", "EA", "EXC", "FANG", "FAST", "FTNT", "GEHC", "GFS", "GILD", "GOOG", "GOOGL", "HON",
+                "IDXX", "INTC", "INTU", "ISRG", "KDP", "KHC", "KLAC", "LIN", "LRCX", "LULU", "MAR", "MCHP", "MDB", "MDLZ", "MELI", "META",
+                "MNST", "MRVL", "MSFT", "MSTR", "MU", "NFLX", "NVDA", "NXPI", "ODFL", "ON", "ORLY", "PANW", "PAYX", "PCAR", "PDD", "PEP",
+                "PLTR", "PYPL", "QCOM", "REGN", "ROP", "ROST", "SBUX", "SHOP", "SNPS", "TEAM", "TMUS", "TRI", "TSLA", "TTD", "TTWO", "TXN",
+                "VRSK", "VRTX", "WBD", "WDAY", "XEL", "ZS"]   # approximate current membership; used only if Wikipedia cannot be read
+FALLBACKS = {"Dow": DOW_FALLBACK, "Nasdaq": NDX_FALLBACK}
+
+
 def yahoo_candidates(code):
     """'SHOP US' -> ['SHOP'];  '2330 TT' -> ['2330.TW', '2330.TWO'];  '0700 HK' -> ['0700.HK'];  '600519 CH' -> ['600519.SS']"""
     code = code.strip().upper()
@@ -325,17 +335,22 @@ def _clean(x):
 
 
 def wikipedia_members(url, min_rows=20):
-    """-> [(yahoo symbol, company name)]: the largest table on the page that has a Symbol / Ticker column."""
+    """-> [(yahoo symbol, company name)]: the largest table on the page that has a Symbol / Ticker column.
+    Header cells only need to CONTAIN 'symbol' or 'ticker' (e.g. 'Ticker symbol', 'Stock symbol'). If nothing matches, the error
+    says how big the page was and what the largest tables look like, so the next log shows what Wikipedia actually served."""
     p = TableCollector()
-    p.feed(get(url, tries=2, timeout=25).decode("utf-8", "ignore"))
+    html = get(url, tries=2, timeout=25).decode("utf-8", "ignore")
+    p.feed(html)
+    is_sym = lambda c: re.search(r"symbol|ticker", _clean(c), re.I) is not None   # noqa: E731
+    is_name = lambda c: re.search(r"security|company|name", _clean(c), re.I) is not None   # noqa: E731
     best = []
     for rows in p.tables:
-        hi = next((i for i, r in enumerate(rows[:4]) if any(_clean(c).lower() in ("symbol", "ticker", "ticker symbol") for c in r)), None)
+        hi = next((i for i, r in enumerate(rows[:4]) if any(is_sym(c) for c in r)), None)
         if hi is None:
             continue
-        head = [_clean(c).lower() for c in rows[hi]]
-        si = next(i for i, h in enumerate(head) if h in ("symbol", "ticker", "ticker symbol"))
-        ni = next((i for i, h in enumerate(head) if h in ("security", "company", "company name", "name")), None)
+        head = rows[hi]
+        si = next(i for i, c in enumerate(head) if is_sym(c))
+        ni = next((i for i, c in enumerate(head) if is_name(c) and i != si), None)
         seen, members = set(), []
         for r in rows[hi + 1:]:
             if len(r) <= si:
@@ -347,7 +362,9 @@ def wikipedia_members(url, min_rows=20):
         if len(members) > len(best):
             best = members
     if len(best) < min_rows:
-        raise ValueError(f"members table not found on page (best candidate had {len(best)} rows)")
+        big = sorted(p.tables, key=len, reverse=True)[:3]
+        look = "; ".join(f"{len(t)} rows, header {[_clean(c)[:14] for c in t[0]][:6]}" for t in big if t)
+        raise ValueError(f"members table not found (page {len(html)} chars, {len(p.tables)} tables, best candidate {len(best)} rows; largest tables: {look or 'none'})")
     return best
 
 
@@ -370,7 +387,8 @@ def read_movers(path):
                 if key == "wikipedia":
                     cur["wiki"] = val
                 elif key == "index":
-                    cur["index"] = val
+                    cur["index"] = val.split(",")[0].strip()
+                    cur["index_cands"] = [v.strip() for v in val.split(",") if v.strip()]
                 elif key == "weights":
                     cur["weights"] = val
                 elif key == "weighting":
@@ -418,19 +436,27 @@ def read_weights(path):
 
 
 def quick_quote(cands, deadline):
-    """Last price and day % change from a small 5-day Yahoo request. Tries each candidate symbol in turn."""
+    """Last price, day % change, the time that price is as of, and whether the exchange was open when it was fetched.
+    Small 5-day Yahoo request (1 month if that has fewer than two closes). Tries each candidate symbol in turn."""
     last_err = None
     for sym in cands:
         try:
             if time.time() > deadline:
                 raise TimeoutError("movers time budget used")
-            raw = get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range=5d&interval=1d", tries=2, timeout=10)
-            res = json.loads(raw)["chart"]["result"][0]
-            closes = [c for c in res["indicators"]["quote"][0]["close"] if c is not None]
-            if len(closes) < 2:
+            for rng in ("5d", "1mo"):
+                raw = get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range={rng}&interval=1d", tries=2, timeout=10)
+                res = json.loads(raw)["chart"]["result"][0]
+                closes = [c for c in res["indicators"]["quote"][0]["close"] if c is not None]
+                if len(closes) >= 2:
+                    break
+            else:
                 raise ValueError("no previous close")
-            last = res["meta"].get("regularMarketPrice") or closes[-1]
-            return {"ysym": sym, "last": last, "pct": (last / closes[-2] - 1) * 100}
+            meta = res["meta"]
+            last = meta.get("regularMarketPrice") or closes[-1]
+            reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+            now = time.time()
+            live = bool(reg.get("start") and reg.get("end") and reg["start"] <= now < reg["end"])
+            return {"ysym": sym, "last": last, "pct": (last / closes[-2] - 1) * 100, "asof": meta.get("regularMarketTime"), "live": live}
         except Exception as e:  # noqa: BLE001
             last_err = e
     raise last_err
@@ -539,14 +565,18 @@ def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketca
                 u["items"] = [([s], n, s) for s, n in wikipedia_members(u["wiki"])]
             except Exception as e:  # noqa: BLE001
                 errors.append(f"movers {u['name']}: Wikipedia list failed ({e})")
-                if u["name"].startswith("Dow"):
-                    u["items"] = [([s], s, s) for s in DOW_FALLBACK]
-                    errors.append("movers Dow 30: used built-in fallback list")
+                fb = next((v for k, v in FALLBACKS.items() if u["name"].startswith(k)), None)
+                if fb:
+                    u["items"] = [([s], s, s) for s in fb]
+                    u["fallback"] = True
+                    errors.append(f"movers {u['name']}: used built-in member list (may be slightly out of date)")
     cache, jobs, idx = {}, [], {}
     with ThreadPoolExecutor(max_workers=10) as ex:
         for u in unis:
-            if u["index"] and u["index"] not in cache:
-                cache[u["index"]] = ex.submit(quick_quote, [u["index"]], deadline)
+            if u["index"]:
+                ik = tuple(u.get("index_cands") or [u["index"]])
+                if ik not in cache:
+                    cache[ik] = ex.submit(quick_quote, list(ik), deadline)
             for cands, name, disp in u["items"]:
                 key = tuple(cands)
                 if key not in cache:   # a stock in several universes is fetched once
@@ -557,13 +587,13 @@ def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketca
         for uname, name, disp, fu in jobs:
             try:
                 q = fu.result()
-                by[uname].append({"symbol": disp, "label": name, "pct": q["pct"], "last": q["last"], "ysym": q["ysym"]})
+                by[uname].append({"symbol": disp, "label": name, "pct": q["pct"], "last": q["last"], "ysym": q["ysym"], "asof": q.get("asof"), "live": q.get("live", False)})
             except Exception:  # noqa: BLE001
                 failed[uname].append(disp)
         for u in unis:
             if u["index"]:
                 try:
-                    idx[u["name"]] = cache[u["index"]].result()
+                    idx[u["name"]] = cache[tuple(u.get("index_cands") or [u["index"]])].result()
                 except Exception as e:  # noqa: BLE001
                     errors.append(f"movers {u['name']}: index {u['index']} unavailable ({e})")
     need = {r["ysym"] for u in unis if not u["bbg"] and u["weighting"] != "price" for r in by[u["name"]]}
@@ -585,7 +615,10 @@ def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketca
         ranked = sorted((r for r in rows if r["c"] is not None), key=lambda r: r["c"], reverse=True)
         keep = lambda r: {k: r[k] for k in ("symbol", "label", "pct", "w", "c")}   # noqa: E731
         iq = idx.get(u["name"])
-        out[u["name"]] = {"n": total, "loaded": len(rows), "adv": sum(1 for r in rows if r["pct"] > 0), "dec": sum(1 for r in rows if r["pct"] < 0),
+        times = [r["asof"] for r in rows if r.get("asof")] + ([iq["asof"]] if iq and iq.get("asof") else [])
+        out[u["name"]] = {"asof": max(times) if times else None, "live": any(r.get("live") for r in rows),
+                          "members": "built-in list" if u.get("fallback") else ("Bloomberg file" if u["bbg"] else ("live list" if u["wiki"] else "curated list")),
+                          "n": total, "loaded": len(rows), "adv": sum(1 for r in rows if r["pct"] > 0), "dec": sum(1 for r in rows if r["pct"] < 0),
                           "method": method, "basis": basis, "unit": unit, "index": {"symbol": u["index"], "pct": iq["pct"], "last": iq["last"]} if iq else None,
                           **summ, "gainers": [keep(r) for r in ranked if r["c"] > 0][:top], "losers": [keep(r) for r in ranked[::-1] if r["c"] < 0][:top]}
     return out

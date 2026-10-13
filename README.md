@@ -28,6 +28,8 @@ GitHub often starts scheduled runs late, sometimes by several hours, and occasio
 and the page shows an amber warning when its data pre-dates the last US close. The "Copy brief for Claude" text begins with a freshness block (when the data was generated,
 whether it includes the last close) so Claude can judge staleness correctly. You can also press **Run workflow** on the Actions tab at any time.
 
+**For on-time refreshes** (GitHub's scheduler is 3 to 9 hours late), set up the free external timer in `TIMER_SETUP.md`: it presses the Run button at exactly 6:15am New York time and the other slots.
+
 ## Top movers (ranked by impact on the index)
 The morning snapshot ranks stocks by their **contribution to the index move** (weight in the index x day move), for the Dow 30, S&P 500,
 Nasdaq-100 (members read live from Wikipedia) and China H-shares, China A-shares, Taiwan and Korea (curated large caps in `movers.txt`).
@@ -35,6 +37,7 @@ Nasdaq-100 (members read live from Wikipedia) and China H-shares, China A-shares
 - Everything else uses weights from Bloomberg files in the `weights/` folder when present (exact), otherwise Yahoo market caps (approximate;
   the card is marked "approx", and Asian lists are only a basket of large caps, not the whole index).
 - How to export the Bloomberg weights: see `weights/README.txt`.
+Each card shows the time its prices are as of and flags builds made while the market was open (intraday). The Dow and Nasdaq-100 fall back to a built-in member list if Wikipedia cannot be read (the card says so).
 To change the Asian lists, open `movers.txt` on GitHub, click the pencil, edit and save. Bloomberg style codes work (`0700 HK`, `600519 CH`, `2330 TT`, `005930 KS`).
 
 ## Bloomberg screens (typed in by hand)
