@@ -368,6 +368,17 @@ def wikipedia_members(url, min_rows=20):
     return best
 
 
+def nasdaq100_members():
+    """-> [(yahoo symbol, company name)] from Nasdaq's own list of Nasdaq-100 members."""
+    d = json.loads(get("https://api.nasdaq.com/api/quote/list-type/nasdaq100", tries=2, timeout=20))
+    rows = ((d.get("data") or {}).get("data") or {}).get("rows") or (d.get("data") or {}).get("rows") or []
+    out = [(r["symbol"].strip().upper().replace(".", "-").replace("/", "-"), (r.get("companyName") or r["symbol"]).strip())
+           for r in rows if r.get("symbol")]
+    if len(out) < 90:
+        raise ValueError(f"only {len(out)} rows")
+    return out
+
+
 def read_movers(path):
     """movers.txt -> [{"name", "wiki", "index", "weights", "weighting", "items": [(candidates, name, display)]}]"""
     unis, cur = [], None
@@ -564,8 +575,17 @@ def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketca
             try:
                 u["items"] = [([s], n, s) for s, n in wikipedia_members(u["wiki"])]
             except Exception as e:  # noqa: BLE001
-                errors.append(f"movers {u['name']}: Wikipedia list failed ({e})")
                 fb = next((v for k, v in FALLBACKS.items() if u["name"].startswith(k)), None)
+                nd = None
+                if u["name"].startswith("Nasdaq"):   # Wikipedia's Nasdaq-100 page lost its member table (Oct 2026)
+                    try:
+                        nd = nasdaq100_members()
+                    except Exception as e2:  # noqa: BLE001
+                        errors.append(f"movers {u['name']}: Nasdaq's own member list failed ({e2})")
+                if nd:
+                    u["items"] = [([s], n, s) for s, n in nd]
+                    continue
+                errors.append(f"movers {u['name']}: Wikipedia list failed ({e})")
                 if fb:
                     u["items"] = [([s], s, s) for s in fb]
                     u["fallback"] = True
