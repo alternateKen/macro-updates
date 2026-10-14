@@ -8,8 +8,8 @@ a US economic calendar, an auto-generated morning snapshot, and a "Copy brief fo
 Data: Yahoo Finance (prices), US Treasury and NY Fed (yields, Fed funds), Japan Ministry of Finance (JGBs),
 FRED (credit spreads, best effort), public RSS feeds (headlines), TradingView widget (calendar). All free, no keys.
 
-The stock baskets live in a separate repository and page:
-[agentic-watchlist](https://github.com/alternateKen/agentic-watchlist) (link at the top of the dashboard).
+The themed watchlists and the broad technical screen live in a separate repository and page:
+[stock-screener](https://github.com/alternateKen/stock-screener) (link at the top of the dashboard). It replaces the old agentic-watchlist page.
 
 ## One-time switch-on
 1. GitHub repo, Settings, Pages, Source: choose **GitHub Actions**.
