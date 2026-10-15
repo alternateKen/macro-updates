@@ -415,6 +415,8 @@ def read_weights(path):
     """Bloomberg MEMB export (csv / tab / semicolon text) -> [(code, name, display, weight %)].
     Needs a ticker column and a weight column; headers like 'Ticker', 'Name', 'Index Weight', '% Wgt' are recognised."""
     raw = open(path, encoding="utf-8-sig", errors="ignore").read()
+    # '# source: ...' / '# asof: ...' note lines (written by the automatic Bloomberg sync) are not table rows
+    raw = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("#"))
     delim = "\t" if raw.count("\t") > raw.count(",") else (";" if raw.count(";") > raw.count(",") else ",")
     rows = [r for r in csv.reader(io.StringIO(raw), delimiter=delim) if any(c.strip() for c in r)]
     hi = next((i for i, r in enumerate(rows[:10]) if any(re.search(r"weight|wgt", c, re.I) for c in r)), None)
