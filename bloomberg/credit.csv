@@ -4,11 +4,11 @@
 group,index,level,chg,basis,roll,low,high,avg,vs_avg,chg_3m,quote
 Americas,CDX Investment Grade,60.55,1.86,,,50.0,60.6,53.4,7.2,9.1,spread
 Americas,CDX High Yield,106.14,-0.43,,,106.1,108.1,107.5,-1.4,-1.8,price
-EMEA,iTraxx Europe,63.88,0.56,,,50.7,65.7,55.4,8.5,10.7,spread
-EMEA,iTraxx Crossover,316.04,2.16,,,245.4,316.0,268.8,47.2,60.1,spread
-EMEA,iTraxx Sr Financial,71.76,0.47,,,52.9,72.9,59.0,12.8,16.3,spread
-EMEA,iTraxx Sub Financial,120.53,0.90,,,85.1,120.8,96.0,24.6,31.0,spread
-Asia,iTraxx Japan,67.28,1.25,,,54.2,67.3,59.6,7.7,6.9,spread
-Asia,iTraxx Asia Ex Japan IG,74.03,3.00,,,64.4,74.0,68.7,5.3,2.7,spread
-Asia,iTraxx Australia,76.68,3.03,,,65.8,76.7,70.1,6.6,7.4,spread
+EMEA,iTraxx Europe,64.07,0.75,,,50.7,65.7,55.4,8.6,10.9,spread
+EMEA,iTraxx Crossover,317.21,3.33,,,245.4,317.2,268.8,48.4,61.2,spread
+EMEA,iTraxx Sr Financial,71.96,0.67,,,52.9,72.9,59.0,13.0,16.5,spread
+EMEA,iTraxx Sub Financial,120.94,1.31,,,85.1,120.9,96.0,24.9,31.4,spread
+Asia,iTraxx Japan,66.90,0.88,,,54.2,66.9,59.6,7.3,6.5,spread
+Asia,iTraxx Asia Ex Japan IG,73.80,2.77,,,64.4,73.8,68.7,5.1,2.4,spread
+Asia,iTraxx Australia,76.04,2.39,,,65.8,76.0,70.1,5.9,6.8,spread
 Emerging Markets,CDX Emerging Market,97.35,-0.09,,,97.0,98.5,98.1,-0.7,-0.8,price
