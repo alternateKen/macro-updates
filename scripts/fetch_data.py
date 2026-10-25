@@ -48,8 +48,8 @@ YAHOO = {
 # Treasury par-yield columns (normalised, see treasury()) and display labels
 CURVE = [("1mo", "1M"), ("3mo", "3M"), ("6mo", "6M"), ("1yr", "1Y"), ("2yr", "2Y"), ("3yr", "3Y"),
          ("5yr", "5Y"), ("7yr", "7Y"), ("10yr", "10Y"), ("20yr", "20Y"), ("30yr", "30Y")]
-# Credit spreads are only published by FRED, which times out from GitHub's servers. Best effort:
-# one 15-second try, page copes if missing (HYG / LQD in the Volatility & Credit table are the substitute).
+# Credit spreads are only published by FRED. With FRED_API_KEY set (a repository secret) they come from the API;
+# without it, one 15-second try of the chart download, which times out from GitHub's servers (HYG / LQD substitute).
 OAS = [("BAMLH0A0HYM2", "High-yield spread (OAS)"), ("BAMLC0A0CM", "IG corporate spread (OAS)")]
 
 NEWS = [
@@ -208,6 +208,11 @@ def yahoo(symbol):
 
 def fred(series_id, start_days=420):
     start = (datetime.now(timezone.utc) - timedelta(days=start_days)).strftime("%Y-%m-%d")
+    key = os.environ.get("FRED_API_KEY", "").strip()
+    if key:   # the official API answers at once; the chart download below times out from GitHub and many PCs
+        q = urllib.parse.urlencode({"series_id": series_id, "api_key": key, "file_type": "json", "observation_start": start})
+        obs = json.loads(get("https://api.stlouisfed.org/fred/series/observations?" + q, timeout=20))["observations"]
+        return [(o["date"], float(o["value"])) for o in obs if o.get("value") not in (".", "", None)]
     raw = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={start}", tries=1, timeout=15).decode()
     rows = []
     for r in list(csv.reader(io.StringIO(raw)))[1:]:
@@ -777,15 +782,15 @@ def read_bloomberg(folder):
 
     meta, rows = load("wirp_us.csv")
     if rows:
-        out["wirp"] = {"asof": meta.get("asof"), "target": _num(meta.get("target")), "effective": _num(meta.get("effective")),
+        out["wirp"] = {"asof": meta.get("asof"), "source": meta.get("source", ""), "target": _num(meta.get("target")), "effective": _num(meta.get("effective")),
                        "meetings": [{"date": r["meeting"], "cum": _num(r["cum"]), "pct": _num(r["pct"]), "chg": _num(r["imp_change"]), "rate": _num(r["implied_rate"])} for r in rows]}
     meta, rows = load("wirp_global.csv")
     if rows:
-        out["wirp_global"] = {"asof": meta.get("asof"), "rows": [{"region": r["region"], "model": r["model"], "date": r["meeting"], "pct": _num(r["pct"])} for r in rows]}
+        out["wirp_global"] = {"asof": meta.get("asof"), "source": meta.get("source", ""), "rows": [{"region": r["region"], "model": r["model"], "date": r["meeting"], "pct": _num(r["pct"])} for r in rows]}
     meta, rows = load("credit.csv")
     if rows:
         keys = ("level", "chg", "basis", "roll", "low", "high", "avg", "vs_avg", "chg_3m")
-        out["credit"] = {"asof": meta.get("asof"), "rows": [{"group": r["group"], "index": r["index"], "quote": r.get("quote") or "spread", **{k: _num(r.get(k)) for k in keys}} for r in rows]}
+        out["credit"] = {"asof": meta.get("asof"), "source": meta.get("source", ""), "rows": [{"group": r["group"], "index": r["index"], "quote": r.get("quote") or "spread", **{k: _num(r.get(k)) for k in keys}} for r in rows]}
     meta, rows = load("eco.csv")
     if rows:
         tz = meta.get("timezone", "+00:00")
@@ -797,7 +802,7 @@ def read_bloomberg(folder):
                 continue
             ev.append({"time": dt.strftime("%Y-%m-%dT%H:%M:00") + tz, "event": r["event"], "period": r.get("period", ""),
                        "survey": r.get("survey", ""), "actual": r.get("actual", ""), "prior": r.get("prior", ""), "revised": r.get("revised", "")})
-        out["eco"] = {"asof": meta.get("asof"), "events": ev}
+        out["eco"] = {"asof": meta.get("asof"), "source": meta.get("source", ""), "events": ev}
     return out, errs
 
 

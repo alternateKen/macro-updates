@@ -216,7 +216,7 @@ function briefText(d){
   L.push('','DATA FRESHNESS (read this before judging whether the data is stale):');
   L.push(`- Data generated ${etStr(fr.gen)}; this brief was copied ${etStr(fr.now)} (${ageText(fr.now-fr.gen)} later).`);
   if(fr.close!=null)L.push(`- Last US cash close: ${etStr(fr.close)}. The data ${fr.includes?'INCLUDES the final closing prints for that session':'was generated BEFORE that close, so US equity figures are from an earlier point and exclude it'}.`);
-  L.push('- Before the open, US index/stock figures are the last completed session. Futures, FX and crypto are live to within about 15 minutes of generation. US Treasury yields are end-of-day and can lag by a day. Asian markets are their latest close. Bloomberg items carry their own as-of dates.');
+  L.push('- Before the open, US index/stock figures are the last completed session. Futures, FX and crypto are live to within about 15 minutes of generation. US Treasury yields are end-of-day and can lag by a day. Asian markets are their latest close. Fed pricing, credit and calendar items carry their own source and as-of date.');
   L.push('','DATA (generated '+d.generated+')');
   // flag figures from a session before the latest US close (an exchange holiday, a stale quote): Asia and Europe close
   // earlier the same day, so only a gap of more than 30 hours means the figure belongs to an older session
@@ -238,13 +238,13 @@ function briefText(d){
     L.push('Positive: '+m.gainers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
     L.push('Negative: '+m.losers.map(r=>`${r.label} (${r.symbol}) ${fv(r)} [${f(r.pct,2)}% move${r.w!=null?', '+f(r.w,1)+'% weight':''}]`).join('; '));
   });
-  if(d.bbg&&d.bbg.wirp){const w=d.bbg.wirp;L.push('',`## Fed funds futures pricing (Bloomberg WIRP, as of ${w.asof}; plus = hikes, minus = cuts; target ${w.target}%, effective ${w.effective}%)`);
+  if(d.bbg&&d.bbg.wirp){const w=d.bbg.wirp;L.push('',`## Fed funds futures pricing (${isBbg(w.source)?'Bloomberg WIRP':'CME futures via Yahoo, WIRP method'}, as of ${w.asof}; plus = hikes, minus = cuts; target ${w.target}%, effective ${w.effective}%)`);
     w.meetings.forEach(m=>L.push(`${m.date}: cumulative ${f(m.cum,2)} | ${f(m.pct,1)}% at meeting | implied rate ${f(m.rate,3)}%`));
     if(d.bbg.wirp_global)L.push('Next-meeting hike(+)/cut(-) odds: '+d.bbg.wirp_global.rows.map(r=>`${r.model} ${r.date} ${f(r.pct,1)}%`).join('; '));}
-  if(d.bbg&&d.bbg.credit){L.push('',`## Credit indices (Bloomberg, as of ${d.bbg.credit.asof}; level | day chg | vs 3M avg | 3M chg | 3M low-high; price-quoted indices marked: a falling price = wider spreads)`);
+  if(d.bbg&&d.bbg.credit){L.push('',`## ${isBbg(d.bbg.credit.source)?'Credit indices (Bloomberg':'Credit spreads (ICE BofA OAS via FRED, bp'}, as of ${d.bbg.credit.asof}; level | day chg | vs 3M avg | 3M chg | 3M low-high; price-quoted indices marked: a falling price = wider spreads)`);
     d.bbg.credit.rows.forEach(r=>L.push(`${r.index}${r.quote==='price'?' (price)':''}: ${f(r.level,2)} | ${f(r.chg,2)} | ${f(r.vs_avg,1)} | ${f(r.chg_3m,1)} | ${f(r.low,1)}-${f(r.high,1)}`));}
   if(d.bbg&&d.bbg.eco){const now=Date.now();const up=d.bbg.eco.events.filter(x=>new Date(x.time)>=now-2*3600e3&&ECO_KEY.test(x.event));
-    if(up.length){L.push('','## Upcoming US data (Bloomberg ECO consensus; New York time)');
+    if(up.length){L.push('',`## Upcoming US data (${isBbg(d.bbg.eco.source)?'Bloomberg ECO':'Forex Factory'} consensus; New York time)`);
       up.forEach(x=>L.push(`${new Date(x.time).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})} ET: ${x.event} ${x.period} | survey ${x.survey||'n/a'} | prior ${x.prior||'n/a'}${x.actual?' | ACTUAL '+x.actual:''}`));}}
   L.push('','## Headlines');
   d.news.forEach(n=>L.push(`- [${n.source}] ${n.title}`));
@@ -276,10 +276,11 @@ function bizAge(asof){   // working days since the Bloomberg file's date (weeken
   let k=0;for(const x=new Date(a);x<n;){x.setDate(x.getDate()+1);if(x.getDay()!==0&&x.getDay()!==6)k++}
   return k;
 }
-function asofTag(asof,maxBiz){
+const isBbg=src=>!src||/Bloomberg/.test(src);   // hand-typed files have no source line
+function asofTag(asof,maxBiz,src){
   if(!asof)return '';
   const a=bizAge(asof),dt=new Date(asof+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  return `<span class="bbg-asof ${a>maxBiz?'am':''}">Bloomberg, as of ${dt}${a>maxBiz?` · ${a} working days old: refresh the bloomberg/ files`:''}</span>`;
+  return `<span class="bbg-asof ${a>maxBiz?'am':''}">${isBbg(src)?'Bloomberg':'Free data'}, as of ${dt}${a>maxBiz?` · ${a} working days old: ${isBbg(src)?'refresh the bloomberg/ files':'the free source has not updated'}`:''}</span>`;
 }
 const mdate=x=>new Date(x+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 const hcs=(v,dg=2)=>v==null?'–':(v>0?'+':'')+v.toFixed(dg);
@@ -313,7 +314,7 @@ function bbgRates(d){
   const rows=M.map(m=>`<tr><td class="name">${mdate(m.date)}</td><td class="${hikeCls(m.cum)}">${hcs(m.cum)}</td><td class="${hikeCls(m.pct)}">${m.pct==null?'–':hcs(m.pct,1)+'%'}</td><td class="hide-sm">${hcs((m.chg||0)*100,0)} bp</td><td>${m.rate.toFixed(3)}%</td></tr>`).join('');
   const g={};(d.bbg.wirp_global?d.bbg.wirp_global.rows:[]).forEach(r=>(g[r.region]=g[r.region]||[]).push(r));
   const grows=Object.entries(g).map(([reg,rs])=>`<tr class="grp"><td colspan="3">${escH(reg)}</td></tr>`+rs.map(r=>`<tr><td class="name">${escH(r.model)}</td><td>${mdate(r.date)}</td><td class="${hikeCls(r.pct)}">${r.pct==null?'–':hcs(r.pct,1)+'%'}</td></tr>`).join('')).join('');
-  return `<section id="bbg-rates" class="wide"><h2>Central-bank pricing (Bloomberg WIRP) ${asofTag(w.asof,1)}</h2>
+  return `<section id="bbg-rates" class="wide"><h2>${isBbg(w.source)?'Central-bank pricing (Bloomberg WIRP)':'Fed pricing (CME fed funds futures via Yahoo, WIRP method)'} ${asofTag(w.asof,1,w.source)}</h2>
    <div class="note" style="margin:0 0 8px"><b>Fed funds:</b> target ${w.target!=null?w.target.toFixed(2):'–'}% · effective ${w.effective!=null?w.effective.toFixed(2):'–'}% · futures are pricing <b class="${hikeCls(last.cum)}">${dir}</b>: ${hcs(first.cum)} at the ${mdate(first.date)} meeting, ${hcs(last.cum)} by ${mdate(last.date)} (implied ${last.rate.toFixed(2)}%). Plus = hikes, minus = cuts.</div>
    <div class="snap-grid"><div>${wirpChart(M,w.effective)}
       <div class="scroll"><table><tr><th>Meeting</th><th>Cumulative</th><th>% at meeting</th><th class="hide-sm">Rate chg</th><th>Implied</th></tr>${rows}</table></div></div>
@@ -336,9 +337,9 @@ function bbgCredit(d){
     const wc=wideCls(widen(r,r.chg)),w3=wideCls(widen(r,r.chg_3m)),wv=wideCls(widen(r,r.vs_avg));
     return head+`<tr><td class="name">${escH(r.index)}${r.quote==='price'?' <small class="mu" title="quoted as a price: a falling price = wider spreads">(price)</small>':''}</td>
       <td>${r.level.toFixed(2)}</td><td class="${wc}">${f1(r.chg,2)}</td><td class="hide-sm">${rangeBar(r)}</td><td class="hide-sm ${wv}">${f1(r.vs_avg)}</td><td class="${w3}">${f1(r.chg_3m)}</td><td class="hide-sm">${r.low==null?'–':r.low.toFixed(1)+' – '+r.high.toFixed(1)}</td><td class="hide-sm">${r.roll==null?'–':f1(r.roll)}</td></tr>`}).join('');
-  return `<section id="bbg-credit" class="wide"><h2>Credit indices (Bloomberg CDX / iTraxx) ${asofTag(c.asof,1)}</h2><div class="scroll"><table>
+  return `<section id="bbg-credit" class="wide"><h2>${isBbg(c.source)?'Credit indices (Bloomberg CDX / iTraxx)':'Credit spreads (ICE BofA OAS via FRED, bp)'} ${asofTag(c.asof,1,c.source)}</h2><div class="scroll"><table>
     <tr><th></th><th>Level</th><th>Day chg</th><th class="hide-sm">3M range (bar) · tick = avg</th><th class="hide-sm">vs 3M avg</th><th>3M chg</th><th class="hide-sm">3M low – high</th><th class="hide-sm">Roll</th></tr>${body}</table></div>
-    <div class="note"><span class="dn">Red</span> = spreads wider (bad for risk), <span class="up">green</span> = tighter. Indices quoted as a price (CDX High Yield, CDX EM) work in reverse: a falling price means wider spreads; the number shown is the raw price change. These fill in for the FRED credit spreads, which cannot be fetched.</div></section>`;
+    <div class="note"><span class="dn">Red</span> = spreads wider (bad for risk), <span class="up">green</span> = tighter. ${isBbg(c.source)?'Indices quoted as a price (CDX High Yield, CDX EM) work in reverse: a falling price means wider spreads; the number shown is the raw price change.':'Option-adjusted spreads of ICE BofA bond indices in basis points, free stand-ins for CDX / iTraxx (FRED API).'}</div></section>`;
 }
 let ecoAll=false;
 function ecoNum(x){const v=parseFloat(String(x||'').replace(/[^0-9.\-]/g,''));return isNaN(v)?null:v}
@@ -356,7 +357,7 @@ function bbgEco(d){
     const dc=diff==null||diff===0?'':diff>0?'bu':'am';
     return `<tr style="${past?'opacity:.6':''}"><td class="name">${et(x.time)}<small class="mu" style="display:block;font-weight:400">${hk(x.time)} HK</small></td><td style="text-align:left;${key?'font-weight:600':''}">${escH(x.event)} <small class="mu">${escH(x.period)}</small></td>
       <td>${escH(x.survey)||'–'}</td><td class="${dc}" style="font-weight:600">${escH(x.actual)||'–'}${diff!=null?` <small>${diff>0?'▲':diff<0?'▼':'='} vs survey</small>`:''}</td><td>${escH(x.prior)||'–'}${x.revised?` <small class="mu">rev ${escH(x.revised)}</small>`:''}</td></tr>`}).join('');
-  return `<section id="bbg-eco" class="wide"><h2>US data calendar with consensus (Bloomberg ECO) ${asofTag(e.asof,6)}</h2>
+  return `<section id="bbg-eco" class="wide"><h2>US data calendar with consensus (${isBbg(e.source)?'Bloomberg ECO':'Forex Factory'}) ${asofTag(e.asof,6,e.source)}</h2>
    <div style="margin-bottom:8px"><button class="seg ${ecoAll?'':'on'}" data-eco="key">Key releases</button> <button class="seg ${ecoAll?'on':''}" data-eco="all">All releases</button> <span class="note">Times in New York (Hong Kong time underneath)</span></div>
    <div class="scroll"><table><tr><th style="text-align:left">When (New York)</th><th style="text-align:left">Release</th><th>Survey</th><th>Actual</th><th>Prior</th></tr>${rows}</table></div>
    <div class="note">Actual vs survey: <span class="bu">blue ▲</span> above consensus, <span class="am">amber ▼</span> below (direction only: whether a beat is good or bad depends on the release).</div></section>`;
@@ -437,17 +438,17 @@ function snapshot(d){
     const y1=M.filter(m=>new Date(m.date+'T12:00:00')<=lim).pop()||M[M.length-1];
     const k=y1.cum>0.5?'dn':y1.cum<-0.5?'up':dcl(y1.cum);
     const odds=nx.pct==null?'':`${Math.abs(nx.pct).toFixed(0)}% ${nx.pct>=0?'hike':'cut'} odds`;
-    F.push([`<b>Fed pricing:</b> next meeting ${mdate(nx.date)} ${col(odds,hikeCls(nx.pct)||'flat')} · ${col(`${hcs(y1.cum)} ${y1.cum>=0?'hikes':'cuts'} priced by ${mdate(y1.date)}`,k)} · implied ${y1.rate.toFixed(2)}% vs ${bb.wirp.effective!=null?bb.wirp.effective.toFixed(2):'–'}% effective ${asofTag(bb.wirp.asof,1)}`,k]);
+    F.push([`<b>Fed pricing:</b> next meeting ${mdate(nx.date)} ${col(odds,hikeCls(nx.pct)||'flat')} · ${col(`${hcs(y1.cum)} ${y1.cum>=0?'hikes':'cuts'} priced by ${mdate(y1.date)}`,k)} · implied ${y1.rate.toFixed(2)}% vs ${bb.wirp.effective!=null?bb.wirp.effective.toFixed(2):'–'}% effective ${asofTag(bb.wirp.asof,1,bb.wirp.source)}`,k]);
   }
   if(bb.credit&&bb.credit.rows.length){
-    const names=['CDX Investment Grade','CDX High Yield','iTraxx Europe','iTraxx Crossover'];
+    const names=isBbg(bb.credit.source)?['CDX Investment Grade','CDX High Yield','iTraxx Europe','iTraxx Crossover']:['US IG corporate','US High Yield','Euro High Yield','EM corporate'];
     const rs=names.map(n=>bb.credit.rows.find(r=>r.index===n)).filter(Boolean);
     if(rs.length>=3){
       const wide=rs.filter(r=>widen(r,r.chg)>0).length;
       const k=wide>=Math.ceil(rs.length*0.75)?'dn':wide<=Math.floor(rs.length*0.25)?'up':'am';
       const part=r=>{const w=widen(r,r.chg),near=r.high!=null&&r.low!=null&&r.high>r.low&&(r.quote==='price'?(r.level-r.low)/(r.high-r.low)<=0.15:(r.level-r.low)/(r.high-r.low)>=0.9);
         return col(`${r.index.replace('Investment Grade','IG').replace('High Yield','HY')} ${r.level.toFixed(r.quote==='price'?2:(r.level<100?1:0))} (${hcs(r.chg,2)})${near?' near 3M wide':''}`,wideCls(w)||'flat')};
-      F.push([`<b>Credit:</b> ${rs.map(part).join(' · ')} ${asofTag(bb.credit.asof,1)}`,k]);
+      F.push([`<b>Credit:</b> ${rs.map(part).join(' · ')} ${asofTag(bb.credit.asof,1,bb.credit.source)}`,k]);
     }
   }
   if(bb.eco&&bb.eco.events.length){

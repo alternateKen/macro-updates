@@ -37,8 +37,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Free Fed pricing, credit spreads and calendar (replace the bloomberg/ files in this build only)
+        timeout-minutes: 3
+        continue-on-error: true   # a failed source keeps the committed bloomberg/ file; never block the refresh
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}   # repository secret; without it credit keeps the committed file
+        run: python scripts/free_data.py bloomberg
       - name: Fetch fresh market data
         timeout-minutes: 9
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python scripts/fetch_data.py docs/data.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
