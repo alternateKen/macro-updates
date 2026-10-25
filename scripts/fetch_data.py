@@ -95,9 +95,46 @@ def latest_bar_missing(pts, meta):
     rmt = meta.get("regularMarketTime")
     if not pts or not rmt:
         return False
-    off = meta.get("gmtoffset") or 0
-    day = lambda t: datetime.fromtimestamp(t + off, timezone.utc).date()  # noqa: E731
-    return day(pts[-1][0]) < day(rmt)
+    return _exchange_day(pts[-1][0], meta) < _exchange_day(rmt, meta)
+
+
+def _exchange_day(t, meta):
+    return datetime.fromtimestamp(t + (meta.get("gmtoffset") or 0), timezone.utc).date()
+
+
+def clean_bars(pts, meta):
+    """Daily (timestamp, close, ...) bars -> bars safe to measure from.
+    1. Drops placeholder bars dated after the session the latest price belongs to. On an exchange holiday Yahoo can add
+       a bar that just repeats the previous close (Taiwan, 23 Oct 2026): measuring from it shows every stock at 0%.
+    2. Drops one-off bad ticks: a close under half or over twice the median of its neighbours (a 1306.T bar at a
+       tenth of the price made its 52-week low 37 instead of about 340)."""
+    rmt = meta.get("regularMarketTime")
+    if rmt:
+        last_day = _exchange_day(rmt, meta)
+        pts = [p for p in pts if _exchange_day(p[0], meta) <= last_day]
+    out = []
+    for i, p in enumerate(pts):
+        near = sorted(q[1] for q in pts[max(0, i - 3):i] + pts[i + 1:i + 4])
+        med = near[len(near) // 2] if near else None
+        if med and not (0.5 * med <= p[1] <= 2 * med):
+            continue
+        out.append(p)
+    return out
+
+
+# Yahoo's daily history for some Chinese indices comes back as a single bar (Oct 2026); Tencent has the full series.
+TENCENT = {"000300.SS": "sh000300", "000001.SS": "sh000001", "399001.SZ": "sz399001", "399006.SZ": "sz399006"}
+
+
+def tencent_bars(symbol, meta):
+    code = TENCENT[symbol]
+    raw = json.loads(get(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,320,", timeout=15))
+    bars = []
+    for k in (raw.get("data") or {}).get(code, {}).get("day") or []:   # [date, open, close, high, low, volume]
+        # timestamp at 15:00 Beijing time on that day, so _exchange_day() gives the same date
+        t = int(datetime.strptime(k[0], "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()) + 15 * 3600 - (meta.get("gmtoffset") or 28800)
+        bars.append((t, float(k[2]), float(k[5]) if len(k) > 5 else None))
+    return bars
 
 
 def yahoo(symbol):
@@ -113,11 +150,19 @@ def yahoo(symbol):
         raise err
     res = json.loads(raw)["chart"]["result"][0]
     meta = res["meta"]
-    ts = res["timestamp"]
-    closes = res["indicators"]["quote"][0]["close"]
-    pts = [(t, c) for t, c in zip(ts, closes) if c is not None]
+    quote = res["indicators"]["quote"][0]
+    vols_raw = quote.get("volume") or []
+    pts = [(t, c, vols_raw[i] if i < len(vols_raw) else None)
+           for i, (t, c) in enumerate(zip(res.get("timestamp") or [], quote.get("close") or [])) if c is not None]
+    history = "Yahoo"
+    if len(pts) < 2 and symbol in TENCENT:
+        try:
+            pts, history = tencent_bars(symbol, meta), "Tencent"
+        except Exception:  # noqa: BLE001
+            pass
+    pts = clean_bars(pts, meta)
     last = meta.get("regularMarketPrice", pts[-1][1])
-    series = [c for _, c in pts]
+    series = [p[1] for p in pts]
     missing = latest_bar_missing(pts, meta)
     if missing:
         # the latest session has no bar yet: the last bar is the prior close, and the latest price is a new point
@@ -136,14 +181,14 @@ def yahoo(symbol):
         return None if a is None or not b else (a / b - 1) * 100
 
     year = datetime.now(timezone.utc).year
-    ytd_base = next((c for t, c in pts if datetime.fromtimestamp(t, timezone.utc).year == year), None)
-    prior = [c for t, c in pts if datetime.fromtimestamp(t, timezone.utc).year < year]
+    ytd_base = next((p[1] for p in pts if datetime.fromtimestamp(p[0], timezone.utc).year == year), None)
+    prior = [p[1] for p in pts if datetime.fromtimestamp(p[0], timezone.utc).year < year]
     if prior:
         ytd_base = prior[-1]
-    vols_raw = res["indicators"]["quote"][0].get("volume") or []
-    vols = [v for c, v in zip(closes, vols_raw) if c is not None and v is not None]
+    vols = [p[2] for p in pts if p[2] is not None]
     base = sum(vols[-21:-1]) / 20 if len(vols) >= 21 else 0
     vol_x = vols[-1] / base if base and not missing else None   # without the latest bar there is no volume for it yet
+    short = len(series) < 20   # no usable history (Yahoo returns one bar for a few indices): leave ranges blank, not fake
 
     def ma(n):
         return sum(series[-n:]) / n if len(series) >= n else None
@@ -153,10 +198,11 @@ def yahoo(symbol):
         "symbol": symbol, "last": last, "prev": prev,
         "chg": None if prev is None else last - prev,
         "pct": pct(last, prev), "w1": pct(last, ago(5)), "m1": pct(last, ago(21)),
-        "ytd": pct(last, ytd_base),
-        "hi52": max(series), "lo52": min(series),
+        "ytd": None if short else pct(last, ytd_base),
+        "hi52": None if short else max(series), "lo52": None if short else min(series),
         "spark": [round(x, 4) for x in series[-45:]],
         "asof": datetime.fromtimestamp(meta.get("regularMarketTime", pts[-1][0]), timezone.utc).isoformat(),
+        "history": history if not short else "none",
     }
 
 
@@ -477,6 +523,9 @@ def quick_quote(cands, deadline):
                 raw = get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range={rng}&interval=1d", tries=2, timeout=10)
                 res = json.loads(raw)["chart"]["result"][0]
                 pts = [(t, c) for t, c in zip(res.get("timestamp") or [], res["indicators"]["quote"][0]["close"]) if c is not None]
+                if len(pts) < 2 and sym in TENCENT:
+                    pts = tencent_bars(sym, res["meta"])
+                pts = clean_bars(pts, res["meta"])
                 if len(pts) >= 2:
                     break
             else:
@@ -493,8 +542,8 @@ def quick_quote(cands, deadline):
     raise last_err
 
 
-def yahoo_marketcaps(symbols, deadline):
-    """{yahoo symbol: market cap in local currency} from Yahoo's quote endpoint (needs a cookie + crumb)."""
+def yahoo_quotes(symbols, deadline):
+    """{yahoo symbol: quote dict} from Yahoo's quote endpoint (needs a cookie + crumb)."""
     import http.cookiejar
     op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     op.addheaders = list(UA.items())
@@ -513,13 +562,34 @@ def yahoo_marketcaps(symbols, deadline):
         try:
             url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + urllib.parse.quote(",".join(b)) + "&crumb=" + urllib.parse.quote(crumb)
             data = json.loads(op.open(url, timeout=20).read())
-            return {r["symbol"]: float(r["marketCap"]) for r in data["quoteResponse"]["result"] if r.get("marketCap")}
+            return {r["symbol"]: r for r in data["quoteResponse"]["result"]}
         except Exception:  # noqa: BLE001
             return {}
-    caps = {}
+    quotes = {}
     with ThreadPoolExecutor(max_workers=4) as ex:
         for res in ex.map(batch, [syms[i:i + 40] for i in range(0, len(syms), 40)]):
-            caps.update(res)
+            quotes.update(res)
+    return quotes
+
+
+def fix_futures_rolls(sections):
+    """Continuous futures (=F) switch contract on roll day, so 'today vs yesterday' can compare two different contracts
+    (Brent, 23 Oct 2026: Jan contract against the Dec contract's close showed -1.3% on a +2.8% day). Yahoo's quote
+    endpoint gives the previous close of the contract trading now; use it for the day change."""
+    rows = [r for rs in sections.values() for r in rs if r["symbol"].endswith("=F")]
+    quotes = yahoo_quotes([r["symbol"] for r in rows], time.time() + 30)
+    for r in rows:
+        q = quotes.get(r["symbol"]) or {}
+        pc, px = q.get("regularMarketPreviousClose"), q.get("regularMarketPrice")
+        if pc and px and abs(px - r["last"]) <= 0.002 * abs(r["last"]) and abs(pc - (r["prev"] or 0)) > 0.0005 * abs(pc):
+            r["roll"] = f"previous close of {q.get('underlyingSymbol') or 'the current contract'} (the continuous series rolled)"
+            r["prev"], r["chg"], r["pct"] = pc, r["last"] - pc, (r["last"] / pc - 1) * 100
+
+
+def yahoo_marketcaps(symbols, deadline):
+    """{yahoo symbol: market cap in local currency}."""
+    syms = list(symbols)
+    caps = {s: float(q["marketCap"]) for s, q in yahoo_quotes(syms, deadline).items() if q.get("marketCap")}
     if len(caps) < len(syms) * 0.5:
         raise ValueError(f"only {len(caps)} of {len(syms)} market caps returned")
     return caps
@@ -537,7 +607,7 @@ def rank_universe(u, rows, index_q, caps):
         for r in rows:
             r["w"] = u["bbg"].get(r["symbol"])
             r["c"] = None if r["w"] is None else r["w"] * r["pct"]
-        method, basis, unit = "Bloomberg index weights", "index", "bp"
+        method, basis, unit = u.get("bbg_method", "Bloomberg index weights"), "index", "bp"
     elif u["weighting"] == "price":   # Dow: price-weighted, so a $1 move counts the same in any member
         tot = sum(r["last"] for r in rows)
         div = tot / index_q["last"] if index_q and len(rows) == len(u["items"]) and index_q["last"] else DOW_DIVISOR_FALLBACK
@@ -587,6 +657,13 @@ def build_movers(path, errors, budget_seconds=240, top=5, caps_fn=yahoo_marketca
                 if len(ws) >= 5:
                     u["items"] = [(yahoo_candidates(code), name, disp) for code, name, disp, w in ws]
                     u["bbg"] = {disp: w for code, name, disp, w in ws}
+                    # The sync computed some files from free-float market caps because the index licence withholds the
+                    # official weights. Those are approximate (the Nasdaq-100's own weights cap the largest names), so
+                    # the contributions need not add up to the index move: say so on the card.
+                    with open(wp, encoding="utf-8-sig", errors="ignore") as fh:
+                        src = " ".join(line for line in fh.read().splitlines()[:5] if line.lstrip().startswith("#"))
+                    if "free-float" in src:
+                        u["bbg_method"] = "Free-float market caps from Bloomberg (approx: not the index's own weights)"
                     continue
                 errors.append(f"movers {u['name']}: {u['weights']} has fewer than 5 usable rows, ignored")
             except Exception as e:  # noqa: BLE001
@@ -753,6 +830,10 @@ def main():
                     d["label"] = label
                     rows.append(d)
             out["sections"][sec] = rows
+        try:
+            fix_futures_rolls(out["sections"])
+        except Exception as e:  # noqa: BLE001
+            out["errors"].append(f"futures roll check: {e}")
 
         nom, err = nom_f.result()
         if err:

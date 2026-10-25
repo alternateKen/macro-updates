@@ -218,9 +218,13 @@ function briefText(d){
   if(fr.close!=null)L.push(`- Last US cash close: ${etStr(fr.close)}. The data ${fr.includes?'INCLUDES the final closing prints for that session':'was generated BEFORE that close, so US equity figures are from an earlier point and exclude it'}.`);
   L.push('- Before the open, US index/stock figures are the last completed session. Futures, FX and crypto are live to within about 15 minutes of generation. US Treasury yields are end-of-day and can lag by a day. Asian markets are their latest close. Bloomberg items carry their own as-of dates.');
   L.push('','DATA (generated '+d.generated+')');
+  // flag figures from a session before the latest US close (an exchange holiday, a stale quote): Asia and Europe close
+  // earlier the same day, so only a gap of more than 30 hours means the figure belongs to an older session
+  const usRef=Math.max(0,...(d.sections['US Indices']||[]).map(r=>Date.parse(r.asof)||0));
+  const asofNote=r=>usRef&&Date.parse(r.asof)&&usRef-Date.parse(r.asof)>30*3600e3?` | OLDER SESSION: as of ${new Date(r.asof).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'})}`:'';
   for(const [sec,rows] of Object.entries(d.sections)){
     L.push('','## '+sec);
-    rows.forEach(r=>L.push(`${r.label}: ${f(r.last,Math.abs(r.last)<10?4:2)} | day ${p(r.pct)} | 1W ${p(r.w1)} | 1M ${p(r.m1)} | YTD ${p(r.ytd)} | 52w range ${f(r.lo52)}-${f(r.hi52)}`));
+    rows.forEach(r=>L.push(`${r.label}: ${f(r.last,Math.abs(r.last)<10?4:2)} | day ${p(r.pct)} | 1W ${p(r.w1)} | 1M ${p(r.m1)} | YTD ${p(r.ytd)} | 52w range ${f(r.lo52)}-${f(r.hi52)}${asofNote(r)}${r.history==='none'?' | no price history (day change only)':''}${r.roll?' | day change vs '+r.roll:''}`));
   }
   L.push('','## US Treasury curve, % (latest | 1W ago | 1M ago | 1Y ago), Treasury end-of-day');
   d.curve.forEach(c=>L.push(`${c.label}: ${f(c.now)} | ${f(c.w1)} | ${f(c.m1)} | ${f(c.y1)}`));
@@ -265,7 +269,7 @@ const cm=(sym,v)=>v==null||v===0?'flat':NO_READ.has(sym)?dcl(v):((HIGHER_BAD.has
 const col=(txt,c)=>`<span class="${c}">${txt}</span>`;
 // ================= Bloomberg screens (typed into bloomberg/*.csv): rate pricing, credit, economic calendar =================
 const escH=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const ECO_KEY=/^(CPI MoM|Core CPI MoM|CPI YoY|Core CPI YoY|Initial Jobless Claims|Continuing Claims|FOMC Meeting Minutes|U\. of Mich\. Sentiment|U\. of Mich\. 1 Yr Inflation|Existing Home Sales|NY Fed 1-Yr Inflation Expectations)$/;
+const ECO_KEY=/^(CPI MoM|Core CPI MoM|CPI YoY|Core CPI YoY|Initial Jobless Claims|Continuing Claims|FOMC Meeting Minutes|U\. of Mich\. Sentiment|U\. of Mich\. 1 Yr Inflation|Existing Home Sales|NY Fed 1-Yr Inflation Expectations|Change in Nonfarm Payrolls|Unemployment Rate|Average Hourly Earnings MoM|Core PCE Price Index MoM|Core PCE Price Index YoY|GDP Annualized QoQ|PPI Final Demand MoM|Retail Sales Advance MoM|ISM Manufacturing|ISM Services Index|JOLTS Job Openings|Conf\. Board Consumer Confidence|FOMC Rate Decision \(Upper Bound\)|FOMC Press Conference|(Fed Chair|Fed Vice Chair|FOMC Member) .+ Speaks)$/;
 function bizAge(asof){   // working days since the Bloomberg file's date (weekends do not count as stale)
   if(!asof)return null;
   const a=new Date(asof+'T12:00:00'),n=new Date();n.setHours(12,0,0,0);
