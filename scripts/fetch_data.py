@@ -88,6 +88,18 @@ def rsi14(closes):
     return 100.0 if al == 0 else 100.0 - 100.0 / (1 + ag / al)
 
 
+def latest_bar_missing(pts, meta):
+    """True when Yahoo's daily bars stop before the session the latest price belongs to. This happens for a few hours
+    after the close: the price is already that session's close but its daily bar has not been added yet, so the last
+    bar is the PREVIOUS close (taking the bar before it would measure a two-day move). Dates are the exchange's own."""
+    rmt = meta.get("regularMarketTime")
+    if not pts or not rmt:
+        return False
+    off = meta.get("gmtoffset") or 0
+    day = lambda t: datetime.fromtimestamp(t + off, timezone.utc).date()  # noqa: E731
+    return day(pts[-1][0]) < day(rmt)
+
+
 def yahoo(symbol):
     q = urllib.parse.quote(symbol)
     raw = None
@@ -105,12 +117,17 @@ def yahoo(symbol):
     closes = res["indicators"]["quote"][0]["close"]
     pts = [(t, c) for t, c in zip(ts, closes) if c is not None]
     last = meta.get("regularMarketPrice", pts[-1][1])
-    # previous close = last completed daily close before the latest bar
-    # the last daily bar is the latest session (live or final), so the one before it is the prior close
-    prev = pts[-2][1] if len(pts) >= 2 else meta.get("chartPreviousClose")
     series = [c for _, c in pts]
-    if series:
-        series[-1] = last
+    missing = latest_bar_missing(pts, meta)
+    if missing:
+        # the latest session has no bar yet: the last bar is the prior close, and the latest price is a new point
+        prev = pts[-1][1]
+        series.append(last)
+    else:
+        # the last daily bar is the latest session (live or final), so the one before it is the prior close
+        prev = pts[-2][1] if len(pts) >= 2 else meta.get("chartPreviousClose")
+        if series:
+            series[-1] = last
 
     def ago(n):
         return series[-1 - n] if len(series) > n else None
@@ -126,7 +143,7 @@ def yahoo(symbol):
     vols_raw = res["indicators"]["quote"][0].get("volume") or []
     vols = [v for c, v in zip(closes, vols_raw) if c is not None and v is not None]
     base = sum(vols[-21:-1]) / 20 if len(vols) >= 21 else 0
-    vol_x = vols[-1] / base if base else None
+    vol_x = vols[-1] / base if base and not missing else None   # without the latest bar there is no volume for it yet
 
     def ma(n):
         return sum(series[-n:]) / n if len(series) >= n else None
@@ -459,17 +476,18 @@ def quick_quote(cands, deadline):
             for rng in ("5d", "1mo"):
                 raw = get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range={rng}&interval=1d", tries=2, timeout=10)
                 res = json.loads(raw)["chart"]["result"][0]
-                closes = [c for c in res["indicators"]["quote"][0]["close"] if c is not None]
-                if len(closes) >= 2:
+                pts = [(t, c) for t, c in zip(res.get("timestamp") or [], res["indicators"]["quote"][0]["close"]) if c is not None]
+                if len(pts) >= 2:
                     break
             else:
                 raise ValueError("no previous close")
             meta = res["meta"]
-            last = meta.get("regularMarketPrice") or closes[-1]
+            last = meta.get("regularMarketPrice") or pts[-1][1]
+            prev = pts[-1][1] if latest_bar_missing(pts, meta) else pts[-2][1]
             reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
             now = time.time()
             live = bool(reg.get("start") and reg.get("end") and reg["start"] <= now < reg["end"])
-            return {"ysym": sym, "last": last, "pct": (last / closes[-2] - 1) * 100, "asof": meta.get("regularMarketTime"), "live": live}
+            return {"ysym": sym, "last": last, "pct": (last / prev - 1) * 100, "asof": meta.get("regularMarketTime"), "live": live}
         except Exception as e:  # noqa: BLE001
             last_err = e
     raise last_err
