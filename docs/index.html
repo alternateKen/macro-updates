@@ -277,6 +277,7 @@ function bizAge(asof){   // working days since the Bloomberg file's date (weeken
   return k;
 }
 const isBbg=src=>!src||/Bloomberg/.test(src);   // hand-typed files have no source line
+// FRED publishes the ICE BofA credit spreads 1-2 working days late, so free credit turns amber only after 2 days
 function asofTag(asof,maxBiz,src){
   if(!asof)return '';
   const a=bizAge(asof),dt=new Date(asof+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -337,7 +338,7 @@ function bbgCredit(d){
     const wc=wideCls(widen(r,r.chg)),w3=wideCls(widen(r,r.chg_3m)),wv=wideCls(widen(r,r.vs_avg));
     return head+`<tr><td class="name">${escH(r.index)}${r.quote==='price'?' <small class="mu" title="quoted as a price: a falling price = wider spreads">(price)</small>':''}</td>
       <td>${r.level.toFixed(2)}</td><td class="${wc}">${f1(r.chg,2)}</td><td class="hide-sm">${rangeBar(r)}</td><td class="hide-sm ${wv}">${f1(r.vs_avg)}</td><td class="${w3}">${f1(r.chg_3m)}</td><td class="hide-sm">${r.low==null?'–':r.low.toFixed(1)+' – '+r.high.toFixed(1)}</td><td class="hide-sm">${r.roll==null?'–':f1(r.roll)}</td></tr>`}).join('');
-  return `<section id="bbg-credit" class="wide"><h2>${isBbg(c.source)?'Credit indices (Bloomberg CDX / iTraxx)':'Credit spreads (ICE BofA OAS via FRED, bp)'} ${asofTag(c.asof,1,c.source)}</h2><div class="scroll"><table>
+  return `<section id="bbg-credit" class="wide"><h2>${isBbg(c.source)?'Credit indices (Bloomberg CDX / iTraxx)':'Credit spreads (ICE BofA OAS via FRED, bp)'} ${asofTag(c.asof,isBbg(c.source)?1:2,c.source)}</h2><div class="scroll"><table>
     <tr><th></th><th>Level</th><th>Day chg</th><th class="hide-sm">3M range (bar) · tick = avg</th><th class="hide-sm">vs 3M avg</th><th>3M chg</th><th class="hide-sm">3M low – high</th><th class="hide-sm">Roll</th></tr>${body}</table></div>
     <div class="note"><span class="dn">Red</span> = spreads wider (bad for risk), <span class="up">green</span> = tighter. ${isBbg(c.source)?'Indices quoted as a price (CDX High Yield, CDX EM) work in reverse: a falling price means wider spreads; the number shown is the raw price change.':'Option-adjusted spreads of ICE BofA bond indices in basis points, free stand-ins for CDX / iTraxx (FRED API).'}</div></section>`;
 }
@@ -448,7 +449,7 @@ function snapshot(d){
       const k=wide>=Math.ceil(rs.length*0.75)?'dn':wide<=Math.floor(rs.length*0.25)?'up':'am';
       const part=r=>{const w=widen(r,r.chg),near=r.high!=null&&r.low!=null&&r.high>r.low&&(r.quote==='price'?(r.level-r.low)/(r.high-r.low)<=0.15:(r.level-r.low)/(r.high-r.low)>=0.9);
         return col(`${r.index.replace('Investment Grade','IG').replace('High Yield','HY')} ${r.level.toFixed(r.quote==='price'?2:(r.level<100?1:0))} (${hcs(r.chg,2)})${near?' near 3M wide':''}`,wideCls(w)||'flat')};
-      F.push([`<b>Credit:</b> ${rs.map(part).join(' · ')} ${asofTag(bb.credit.asof,1,bb.credit.source)}`,k]);
+      F.push([`<b>Credit:</b> ${rs.map(part).join(' · ')} ${asofTag(bb.credit.asof,isBbg(bb.credit.source)?1:2,bb.credit.source)}`,k]);
     }
   }
   if(bb.eco&&bb.eco.events.length){
